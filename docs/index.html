@@ -68,11 +68,23 @@
   td.call { white-space: nowrap; font-weight: 600; }
   td.call .dot { margin-right: 6px; }
   td.why { color: var(--ink-2); min-width: 220px; }
+  body { overscroll-behavior-y: contain; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px;
+            margin-bottom: 12px; color: var(--ink-2); font-size: 13px; }
+  #refresh { font: inherit; font-weight: 600; color: var(--ink); background: var(--surface);
+             border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+  #refresh:disabled { color: var(--muted); }
+  #pull { position: fixed; top: 0; left: 50%; z-index: 2; opacity: 0; pointer-events: none;
+          transform: translate(-50%, -40px); background: var(--surface); color: var(--ink-2);
+          border: 1px solid var(--border); border-radius: 16px; padding: 6px 14px; font-size: 13px;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.12); }
   footer { color: var(--muted); font-size: 12px; }
 </style>
 </head>
 <body>
+<div id="pull">Pull to refresh</div>
 <main>
+  <div class="topbar"><span id="updated"></span><button id="refresh" type="button">Refresh</button></div>
   <section class="card">
     <div class="eyebrow" id="today-label"></div>
     <div class="hero" id="hero"></div>
@@ -106,7 +118,7 @@
 </main>
 
 <script>
-const D = {"days": [{"date": "2026-09-12", "retail": null, "fair": 4.026, "call": null, "reason": null}, {"date": "2026-09-13", "retail": null, "fair": 4.026, "call": null, "reason": null}, {"date": "2026-09-14", "retail": null, "fair": 4.064, "call": null, "reason": null}, {"date": "2026-09-15", "retail": null, "fair": 4.1850000000000005, "call": null, "reason": null}, {"date": "2026-09-16", "retail": null, "fair": 4.259, "call": null, "reason": null}, {"date": "2026-09-17", "retail": null, "fair": 4.211, "call": null, "reason": null}, {"date": "2026-09-18", "retail": null, "fair": 4.243, "call": null, "reason": null}, {"date": "2026-09-19", "retail": null, "fair": 4.243, "call": null, "reason": null}, {"date": "2026-09-20", "retail": null, "fair": 4.243, "call": null, "reason": null}, {"date": "2026-09-21", "retail": null, "fair": 4.176, "call": null, "reason": null}, {"date": "2026-09-22", "retail": null, "fair": 4.2010000000000005, "call": null, "reason": null}, {"date": "2026-09-23", "retail": null, "fair": 4.336, "call": null, "reason": null}, {"date": "2026-09-24", "retail": null, "fair": 4.2940000000000005, "call": null, "reason": null}, {"date": "2026-09-25", "retail": null, "fair": 4.143, "call": null, "reason": null}, {"date": "2026-09-26", "retail": null, "fair": 4.143, "call": null, "reason": null}, {"date": "2026-09-27", "retail": null, "fair": 4.143, "call": null, "reason": null}, {"date": "2026-09-28", "retail": null, "fair": 4.0680000000000005, "call": null, "reason": null}, {"date": "2026-09-29", "retail": null, "fair": 3.979, "call": null, "reason": null}, {"date": "2026-09-30", "retail": null, "fair": 4.182, "call": null, "reason": null}, {"date": "2026-10-01", "retail": null, "fair": 4.136, "call": null, "reason": null}, {"date": "2026-10-02", "retail": null, "fair": 4.048, "call": null, "reason": null}, {"date": "2026-10-03", "retail": null, "fair": 4.048, "call": null, "reason": null}, {"date": "2026-10-04", "retail": 4.4695, "fair": 4.048, "call": null, "reason": null}, {"date": "2026-10-05", "retail": null, "fair": 3.968, "call": null, "reason": null}, {"date": "2026-10-06", "retail": null, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-07", "retail": null, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-08", "retail": null, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-09", "retail": null, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-10", "retail": 4.6676, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-11", "retail": 4.6614, "fair": 4.046, "call": "HALF TANK", "reason": "No strong signal: retail $4.66 is 62\u00a2 above fair ($4.05). Buy about 12 gal. (Only 3 days of retail history so far.)"}], "margin": 0.65, "margin_note": "fixed until there are 14 days of history, then auto-tuned", "state": "MI", "wholesale": 3.396, "wholesale_date": "2026-10-06", "generated": "Oct 11, 2026 10:15 PM ET"};
+const D = {"days": [{"date": "2026-09-12", "retail": null, "fair": 4.026, "call": null, "reason": null}, {"date": "2026-09-13", "retail": null, "fair": 4.026, "call": null, "reason": null}, {"date": "2026-09-14", "retail": null, "fair": 4.064, "call": null, "reason": null}, {"date": "2026-09-15", "retail": null, "fair": 4.1850000000000005, "call": null, "reason": null}, {"date": "2026-09-16", "retail": null, "fair": 4.259, "call": null, "reason": null}, {"date": "2026-09-17", "retail": null, "fair": 4.211, "call": null, "reason": null}, {"date": "2026-09-18", "retail": null, "fair": 4.243, "call": null, "reason": null}, {"date": "2026-09-19", "retail": null, "fair": 4.243, "call": null, "reason": null}, {"date": "2026-09-20", "retail": null, "fair": 4.243, "call": null, "reason": null}, {"date": "2026-09-21", "retail": null, "fair": 4.176, "call": null, "reason": null}, {"date": "2026-09-22", "retail": null, "fair": 4.2010000000000005, "call": null, "reason": null}, {"date": "2026-09-23", "retail": null, "fair": 4.336, "call": null, "reason": null}, {"date": "2026-09-24", "retail": null, "fair": 4.2940000000000005, "call": null, "reason": null}, {"date": "2026-09-25", "retail": null, "fair": 4.143, "call": null, "reason": null}, {"date": "2026-09-26", "retail": null, "fair": 4.143, "call": null, "reason": null}, {"date": "2026-09-27", "retail": null, "fair": 4.143, "call": null, "reason": null}, {"date": "2026-09-28", "retail": null, "fair": 4.0680000000000005, "call": null, "reason": null}, {"date": "2026-09-29", "retail": null, "fair": 3.979, "call": null, "reason": null}, {"date": "2026-09-30", "retail": null, "fair": 4.182, "call": null, "reason": null}, {"date": "2026-10-01", "retail": null, "fair": 4.136, "call": null, "reason": null}, {"date": "2026-10-02", "retail": null, "fair": 4.048, "call": null, "reason": null}, {"date": "2026-10-03", "retail": null, "fair": 4.048, "call": null, "reason": null}, {"date": "2026-10-04", "retail": 4.4695, "fair": 4.048, "call": null, "reason": null}, {"date": "2026-10-05", "retail": null, "fair": 3.968, "call": null, "reason": null}, {"date": "2026-10-06", "retail": null, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-07", "retail": null, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-08", "retail": null, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-09", "retail": null, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-10", "retail": 4.6676, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-11", "retail": 4.6614, "fair": 4.046, "call": "HALF TANK", "reason": "No strong signal: retail $4.66 is 62\u00a2 above fair ($4.05). Buy about 12 gal. (Only 3 days of retail history so far.)"}], "margin": 0.65, "margin_note": "fixed until there are 14 days of history, then auto-tuned", "state": "MI", "wholesale": 3.396, "wholesale_date": "2026-10-06", "generated": "Oct 11, 2026 10:21 PM ET"};
 const days = D.days;
 const CALL_COLOR = { "FILL NOW": "var(--fill)", "WAIT": "var(--wait)", "HALF TANK": "var(--half)" };
 const $ = id => document.getElementById(id);
@@ -126,6 +138,31 @@ const dot = call => {
   i.style.background = CALL_COLOR[call] || "transparent";
   return i;
 };
+
+// --- refresh: reload the latest published page (button, or pull down from the top) ---
+$("updated").textContent = "Updated " + D.generated;
+const refresh = () => { $("refresh").textContent = "Refreshing…"; $("refresh").disabled = true; location.reload(); };
+$("refresh").addEventListener("click", refresh);
+const PULL_AT = 130;
+let pullStart = null, pulled = 0;
+const showPull = px => {
+  const p = $("pull");
+  p.style.opacity = px > 10 ? 1 : 0;
+  p.style.transform = `translate(-50%, ${Math.min(px / 2, 70) - 40}px)`;
+  p.textContent = px > PULL_AT ? "Release to refresh" : "Pull to refresh";
+};
+addEventListener("touchstart", e => { pullStart = scrollY <= 0 ? e.touches[0].clientY : null; pulled = 0; },
+                 { passive: true });
+addEventListener("touchmove", e => {
+  if (pullStart == null) return;
+  pulled = scrollY <= 0 ? e.touches[0].clientY - pullStart : 0;
+  showPull(pulled);
+}, { passive: true });
+addEventListener("touchend", () => {
+  if (pullStart != null && pulled > PULL_AT) { $("pull").textContent = "Refreshing…"; refresh(); }
+  else showPull(0);
+  pullStart = null;
+});
 
 // --- today's call ---
 const latest = [...days].reverse().find(d => d.call);

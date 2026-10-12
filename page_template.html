@@ -68,11 +68,23 @@
   td.call { white-space: nowrap; font-weight: 600; }
   td.call .dot { margin-right: 6px; }
   td.why { color: var(--ink-2); min-width: 220px; }
+  body { overscroll-behavior-y: contain; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px;
+            margin-bottom: 12px; color: var(--ink-2); font-size: 13px; }
+  #refresh { font: inherit; font-weight: 600; color: var(--ink); background: var(--surface);
+             border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+  #refresh:disabled { color: var(--muted); }
+  #pull { position: fixed; top: 0; left: 50%; z-index: 2; opacity: 0; pointer-events: none;
+          transform: translate(-50%, -40px); background: var(--surface); color: var(--ink-2);
+          border: 1px solid var(--border); border-radius: 16px; padding: 6px 14px; font-size: 13px;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.12); }
   footer { color: var(--muted); font-size: 12px; }
 </style>
 </head>
 <body>
+<div id="pull">Pull to refresh</div>
 <main>
+  <div class="topbar"><span id="updated"></span><button id="refresh" type="button">Refresh</button></div>
   <section class="card">
     <div class="eyebrow" id="today-label"></div>
     <div class="hero" id="hero"></div>
@@ -126,6 +138,31 @@ const dot = call => {
   i.style.background = CALL_COLOR[call] || "transparent";
   return i;
 };
+
+// --- refresh: reload the latest published page (button, or pull down from the top) ---
+$("updated").textContent = "Updated " + D.generated;
+const refresh = () => { $("refresh").textContent = "Refreshing…"; $("refresh").disabled = true; location.reload(); };
+$("refresh").addEventListener("click", refresh);
+const PULL_AT = 130;
+let pullStart = null, pulled = 0;
+const showPull = px => {
+  const p = $("pull");
+  p.style.opacity = px > 10 ? 1 : 0;
+  p.style.transform = `translate(-50%, ${Math.min(px / 2, 70) - 40}px)`;
+  p.textContent = px > PULL_AT ? "Release to refresh" : "Pull to refresh";
+};
+addEventListener("touchstart", e => { pullStart = scrollY <= 0 ? e.touches[0].clientY : null; pulled = 0; },
+                 { passive: true });
+addEventListener("touchmove", e => {
+  if (pullStart == null) return;
+  pulled = scrollY <= 0 ? e.touches[0].clientY - pullStart : 0;
+  showPull(pulled);
+}, { passive: true });
+addEventListener("touchend", () => {
+  if (pullStart != null && pulled > PULL_AT) { $("pull").textContent = "Refreshing…"; refresh(); }
+  else showPull(0);
+  pullStart = null;
+});
 
 // --- today's call ---
 const latest = [...days].reverse().find(d => d.call);

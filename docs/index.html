@@ -71,9 +71,17 @@
   body { overscroll-behavior-y: contain; }
   .topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px;
             margin-bottom: 12px; color: var(--ink-2); font-size: 13px; }
-  #refresh { font: inherit; font-weight: 600; color: var(--ink); background: var(--surface);
+  [hidden] { display: none !important; }
+  .topbar .buttons { display: flex; gap: 8px; }
+  #fetch-status { color: var(--ink-2); font-size: 13px; margin: -4px 0 12px; }
+  #token-panel { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px;
+                 color: var(--ink-2); }
+  #token-panel p { margin: 0; flex-basis: 100%; }
+  #token { font: inherit; flex: 1; min-width: 160px; padding: 8px 10px; border-radius: 8px;
+           border: 1px solid var(--axis); background: var(--page); color: var(--ink); }
+  #refresh, #fetch, #token-save { white-space: nowrap; font: inherit; font-weight: 600; color: var(--ink); background: var(--surface);
              border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; cursor: pointer; }
-  #refresh:disabled { color: var(--muted); }
+  #refresh:disabled, #fetch:disabled { color: var(--muted); }
   #pull { position: fixed; top: 0; left: 50%; z-index: 2; opacity: 0; pointer-events: none;
           transform: translate(-50%, -40px); background: var(--surface); color: var(--ink-2);
           border: 1px solid var(--border); border-radius: 16px; padding: 6px 14px; font-size: 13px;
@@ -84,7 +92,14 @@
 <body>
 <div id="pull">Pull to refresh</div>
 <main>
-  <div class="topbar"><span id="updated"></span><button id="refresh" type="button">Refresh</button></div>
+  <div class="topbar"><span id="updated"></span><span class="buttons"><button id="fetch" type="button" hidden>Get new prices</button><button id="refresh" type="button">Refresh</button></span></div>
+  <div id="fetch-status" role="status"></div>
+  <section class="card" id="token-panel" hidden>
+    <p>One-time setup: paste a GitHub token that can run this repo's Actions (steps are in the
+      README). It is stored only on this device.</p>
+    <input id="token" type="password" autocomplete="off" placeholder="github_pat_…" aria-label="GitHub token">
+    <button id="token-save" type="button">Save</button>
+  </section>
   <section class="card">
     <div class="eyebrow" id="today-label"></div>
     <div class="hero" id="hero"></div>
@@ -118,7 +133,7 @@
 </main>
 
 <script>
-const D = {"days": [{"date": "2026-09-12", "retail": null, "fair": 4.026, "call": null, "reason": null}, {"date": "2026-09-13", "retail": null, "fair": 4.026, "call": null, "reason": null}, {"date": "2026-09-14", "retail": null, "fair": 4.064, "call": null, "reason": null}, {"date": "2026-09-15", "retail": null, "fair": 4.1850000000000005, "call": null, "reason": null}, {"date": "2026-09-16", "retail": null, "fair": 4.259, "call": null, "reason": null}, {"date": "2026-09-17", "retail": null, "fair": 4.211, "call": null, "reason": null}, {"date": "2026-09-18", "retail": null, "fair": 4.243, "call": null, "reason": null}, {"date": "2026-09-19", "retail": null, "fair": 4.243, "call": null, "reason": null}, {"date": "2026-09-20", "retail": null, "fair": 4.243, "call": null, "reason": null}, {"date": "2026-09-21", "retail": null, "fair": 4.176, "call": null, "reason": null}, {"date": "2026-09-22", "retail": null, "fair": 4.2010000000000005, "call": null, "reason": null}, {"date": "2026-09-23", "retail": null, "fair": 4.336, "call": null, "reason": null}, {"date": "2026-09-24", "retail": null, "fair": 4.2940000000000005, "call": null, "reason": null}, {"date": "2026-09-25", "retail": null, "fair": 4.143, "call": null, "reason": null}, {"date": "2026-09-26", "retail": null, "fair": 4.143, "call": null, "reason": null}, {"date": "2026-09-27", "retail": null, "fair": 4.143, "call": null, "reason": null}, {"date": "2026-09-28", "retail": null, "fair": 4.0680000000000005, "call": null, "reason": null}, {"date": "2026-09-29", "retail": null, "fair": 3.979, "call": null, "reason": null}, {"date": "2026-09-30", "retail": null, "fair": 4.182, "call": null, "reason": null}, {"date": "2026-10-01", "retail": null, "fair": 4.136, "call": null, "reason": null}, {"date": "2026-10-02", "retail": null, "fair": 4.048, "call": null, "reason": null}, {"date": "2026-10-03", "retail": null, "fair": 4.048, "call": null, "reason": null}, {"date": "2026-10-04", "retail": 4.4695, "fair": 4.048, "call": null, "reason": null}, {"date": "2026-10-05", "retail": null, "fair": 3.968, "call": null, "reason": null}, {"date": "2026-10-06", "retail": null, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-07", "retail": null, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-08", "retail": null, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-09", "retail": null, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-10", "retail": 4.6676, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-11", "retail": 4.6614, "fair": 4.046, "call": "HALF TANK", "reason": "No strong signal: retail $4.66 is 62\u00a2 above fair ($4.05). Buy about 12 gal. (Only 3 days of retail history so far.)"}], "margin": 0.65, "margin_note": "fixed until there are 14 days of history, then auto-tuned", "state": "MI", "wholesale": 3.396, "wholesale_date": "2026-10-06", "generated": "Oct 11, 2026 10:21 PM ET"};
+const D = {"days": [{"date": "2026-09-13", "retail": null, "fair": 4.026, "call": null, "reason": null}, {"date": "2026-09-14", "retail": null, "fair": 4.064, "call": null, "reason": null}, {"date": "2026-09-15", "retail": null, "fair": 4.1850000000000005, "call": null, "reason": null}, {"date": "2026-09-16", "retail": null, "fair": 4.259, "call": null, "reason": null}, {"date": "2026-09-17", "retail": null, "fair": 4.211, "call": null, "reason": null}, {"date": "2026-09-18", "retail": null, "fair": 4.243, "call": null, "reason": null}, {"date": "2026-09-19", "retail": null, "fair": 4.243, "call": null, "reason": null}, {"date": "2026-09-20", "retail": null, "fair": 4.243, "call": null, "reason": null}, {"date": "2026-09-21", "retail": null, "fair": 4.176, "call": null, "reason": null}, {"date": "2026-09-22", "retail": null, "fair": 4.2010000000000005, "call": null, "reason": null}, {"date": "2026-09-23", "retail": null, "fair": 4.336, "call": null, "reason": null}, {"date": "2026-09-24", "retail": null, "fair": 4.2940000000000005, "call": null, "reason": null}, {"date": "2026-09-25", "retail": null, "fair": 4.143, "call": null, "reason": null}, {"date": "2026-09-26", "retail": null, "fair": 4.143, "call": null, "reason": null}, {"date": "2026-09-27", "retail": null, "fair": 4.143, "call": null, "reason": null}, {"date": "2026-09-28", "retail": null, "fair": 4.0680000000000005, "call": null, "reason": null}, {"date": "2026-09-29", "retail": null, "fair": 3.979, "call": null, "reason": null}, {"date": "2026-09-30", "retail": null, "fair": 4.182, "call": null, "reason": null}, {"date": "2026-10-01", "retail": null, "fair": 4.136, "call": null, "reason": null}, {"date": "2026-10-02", "retail": null, "fair": 4.048, "call": null, "reason": null}, {"date": "2026-10-03", "retail": null, "fair": 4.048, "call": null, "reason": null}, {"date": "2026-10-04", "retail": 4.4695, "fair": 4.048, "call": null, "reason": null}, {"date": "2026-10-05", "retail": null, "fair": 3.968, "call": null, "reason": null}, {"date": "2026-10-06", "retail": null, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-07", "retail": null, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-08", "retail": null, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-09", "retail": null, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-10", "retail": 4.6676, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-11", "retail": 4.6614, "fair": 4.046, "call": "HALF TANK", "reason": "No strong signal: retail $4.66 is 62\u00a2 above fair ($4.05). Buy about 12 gal. (Only 3 days of retail history so far.)"}, {"date": "2026-10-12", "retail": null, "fair": 4.046, "call": null, "reason": null}], "margin": 0.65, "margin_note": "fixed until there are 14 days of history, then auto-tuned", "state": "MI", "wholesale": 3.396, "wholesale_date": "2026-10-06", "generated": "Oct 12, 2026 06:15 AM ET", "stamp": "2026-10-12T10:15:02+00:00", "repo": "cointugboat8211/gas-helper"};
 const days = D.days;
 const CALL_COLOR = { "FILL NOW": "var(--fill)", "WAIT": "var(--wait)", "HALF TANK": "var(--half)" };
 const $ = id => document.getElementById(id);
@@ -163,6 +178,54 @@ addEventListener("touchend", () => {
   else showPull(0);
   pullStart = null;
 });
+
+// --- get new prices: start the GitHub job, then wait for the republished page ---
+const tokenStore = {
+  get() { try { return localStorage.getItem("gh_token"); } catch { return null; } },
+  set(v) { try { v ? localStorage.setItem("gh_token", v) : localStorage.removeItem("gh_token"); } catch {} },
+};
+const fetchStatus = msg => { $("fetch-status").textContent = msg; };
+const askForToken = () => { $("token-panel").hidden = false; $("token").focus(); };
+async function getNewPrices() {
+  const token = tokenStore.get();
+  if (!token) return askForToken();
+  $("fetch").disabled = true;
+  const stop = msg => { fetchStatus(msg); $("fetch").disabled = false; };
+  fetchStatus("Asking GitHub to fetch new prices…");
+  let res;
+  try {
+    res = await fetch(`https://api.github.com/repos/${D.repo}/actions/workflows/daily.yml/dispatches`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
+      body: JSON.stringify({ ref: "main", inputs: { notify: "false" } }),
+    });
+  } catch { return stop("Couldn't reach GitHub. Check your connection and try again."); }
+  if ([401, 403, 404].includes(res.status)) {
+    tokenStore.set(null); askForToken();
+    return stop("GitHub rejected the token (wrong, expired, or missing the Actions permission). Paste a new one.");
+  }
+  if (!res.ok) return stop(`GitHub returned an error (${res.status}). Try again later.`);
+  fetchStatus("Fetching new prices… this usually takes a minute or two.");
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 10000));
+    try {
+      const html = await (await fetch("./?t=" + Date.now(), { cache: "no-store" })).text();
+      const m = html.match(/"stamp": "([^"]+)"/);
+      if (m && m[1] !== D.stamp) return location.reload();
+    } catch {}
+  }
+  stop("No update after 5 minutes. Tap Refresh a little later.");
+}
+if (D.repo) {
+  $("fetch").hidden = false;
+  $("fetch").addEventListener("click", getNewPrices);
+  $("token-save").addEventListener("click", () => {
+    const v = $("token").value.trim();
+    if (!v) return;
+    tokenStore.set(v); $("token").value = ""; $("token-panel").hidden = true;
+    getNewPrices();
+  });
+}
 
 // --- today's call ---
 const latest = [...days].reverse().find(d => d.call);

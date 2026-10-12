@@ -7,6 +7,11 @@ on:
     - cron: "3 11 * * *"
     - cron: "3 12 * * *"
   workflow_dispatch:
+    inputs:
+      notify:
+        description: Send the push notification
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -25,8 +30,12 @@ jobs:
         env:
           EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-        # A manual "Run workflow" click always runs; the schedule runs once per day.
-        run: python gas.py run ${{ github.event_name == 'schedule' && '--scheduled' || '' }}
+        # A manual run always runs; the schedule runs once per day. The app's
+        # "Get new prices" button starts a manual run with notify off.
+        run: >-
+          python gas.py run
+          ${{ github.event_name == 'schedule' && '--scheduled' || '' }}
+          ${{ github.event_name == 'workflow_dispatch' && !inputs.notify && '--no-notify' || '' }}
       - name: Save history and page
         if: always()
         run: |

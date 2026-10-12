@@ -16,5 +16,6 @@
   "wholesale_max_age_days": 8,
   "eia_series": "EER_EPMRU_PF4_Y35NY_DPG",
   "ntfy_server": "https://ntfy.sh",
-  "page_url": "https://cointugboat8211.github.io/gas-helper/"
+  "page_url": "https://cointugboat8211.github.io/gas-helper/",
+  "github_repo": "cointugboat8211/gas-helper"
 }

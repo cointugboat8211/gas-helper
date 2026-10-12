@@ -274,6 +274,8 @@ def build_page(db, cfg, today, days=30):
         "wholesale": wholesale.get(ws_latest),
         "wholesale_date": ws_latest.isoformat() if ws_latest else None,
         "generated": eastern_now().strftime("%b %d, %Y %I:%M %p ET"),
+        "stamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "repo": cfg.get("github_repo", ""),
     }
     blob = json.dumps(data).replace("</", "<\\/")
     PAGE_OUT.parent.mkdir(exist_ok=True)

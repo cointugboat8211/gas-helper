@@ -68,6 +68,21 @@ before editing settings locally.
 Daily 7:00 AM → Start a program → `python` with arguments `gas.py run` and "Start in" set to
 this folder.
 
+### 5. Optional: "Get new prices" button in the app
+
+The page's **Refresh** button only reloads what's already published. **Get new prices** starts
+the GitHub job on demand (without sending a notification) and reloads when it finishes. It
+needs a GitHub token, pasted into the app once and stored only on that device:
+
+1. Go to <https://github.com/settings/personal-access-tokens/new>.
+2. Name it (e.g. "Gas Call app") and pick an expiration.
+3. **Repository access → Only select repositories →** this repo.
+4. **Permissions → Repository permissions → Actions → Read and write.** Nothing else.
+5. Generate, copy the token, open the app, tap **Get new prices**, paste, **Save**.
+
+If that token ever leaked, the most someone could do is start or cancel this repo's job.
+Delete it at <https://github.com/settings/personal-access-tokens> to revoke it.
+
 ## The rules
 
 Checked in this order; the first match wins.

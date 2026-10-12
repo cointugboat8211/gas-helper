@@ -10,23 +10,26 @@
 <meta name="apple-mobile-web-app-title" content="Gas Call">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#2a78d6">
+<meta name="theme-color" content="#7C8468">
 <style>
+  /* "Olive Garden" palette: parchment #EFE6D5, sand #CDBDA4, olive #B5BF9C,
+     sage #7C8468, bark #5E5645, olivewood #262820 */
   :root {
     color-scheme: light;
-    --page: #f9f9f7; --surface: #fcfcfb; --border: rgba(11,11,11,0.10);
-    --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
-    --grid: #e1e0d9; --axis: #c3c2b7;
-    --retail: #2a78d6; --fair: #eb6834;
-    --fill: #0ca30c; --wait: #d03b3b; --half: #898781;
+    --page: #EFE6D5; --surface: #F8F3E8; --border: rgba(38,40,32,0.14);
+    --ink: #262820; --ink-2: #5E5645; --muted: #8A8270;
+    --grid: #E2D8C4; --axis: #CDBDA4; --accent: #7C8468;
+    --retail: #2F3327; --fair: #7C8468;
+    --fill: #5E8C3A; --wait: #B8532F; --half: #A8987C;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       color-scheme: dark;
-      --page: #0d0d0d; --surface: #1a1a19; --border: rgba(255,255,255,0.10);
-      --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
-      --grid: #2c2c2a; --axis: #383835;
-      --retail: #3987e5; --fair: #d95926;
+      --page: #1A1B15; --surface: #262820; --border: rgba(239,230,213,0.12);
+      --ink: #EFE6D5; --ink-2: #CDBDA4; --muted: #8F8A76;
+      --grid: #34362B; --axis: #4B4C3D; --accent: #B5BF9C;
+      --retail: #EFE6D5; --fair: #8E9878;
+      --fill: #9DBA6A; --wait: #D07A55; --half: #8F8A76;
     }
   }
   * { box-sizing: border-box; }
@@ -94,7 +97,7 @@
   .tabbar button { flex: 1; font: inherit; font-weight: 600; padding: 14px 0; border: 0;
                    background: none; color: var(--muted); cursor: pointer;
                    border-top: 2px solid transparent; }
-  .tabbar button[aria-selected="true"] { color: var(--ink); border-top-color: var(--retail); }
+  .tabbar button[aria-selected="true"] { color: var(--ink); border-top-color: var(--accent); }
   .trip-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
   .trip-head h2 { font-size: 20px; }
   .linkish { font: inherit; font-size: 13px; color: var(--ink-2); background: none; border: 0;
@@ -102,7 +105,7 @@
   .trip .reason { margin: 8px 0 12px; }
   td.area { min-width: 130px; }
   td.area small { display: block; color: var(--ink-2); }
-  .bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--retail);
+  .bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--accent);
          vertical-align: middle; margin-right: 8px; }
   td.price { white-space: nowrap; font-variant-numeric: tabular-nums; }
   td.price small { color: var(--ink-2); }

@@ -9,6 +9,12 @@ on:
     - cron: "3 12 * * *"
     - cron: "3 16 * * *"
     - cron: "3 17 * * *"
+  # The Mac Mini pushes the truck's fuel level at 7:00am and a check-in at noon
+  # (mac/push_fuel.py). Those pushes start this job on time; GitHub's own schedule
+  # above often runs late or not at all, so it is only the fallback.
+  push:
+    branches: [main]
+    paths: [data/fuel.json]
   workflow_dispatch:
     inputs:
       notify:
@@ -37,7 +43,7 @@ jobs:
         # "Get new prices" button starts a manual run with notify off.
         run: >-
           python gas.py run
-          ${{ github.event_name == 'schedule' && '--scheduled' || '' }}
+          ${{ github.event_name != 'workflow_dispatch' && '--scheduled' || '' }}
           ${{ github.event_name == 'workflow_dispatch' && !inputs.notify && '--no-notify' || '' }}
       - name: Save history and page
         if: always()

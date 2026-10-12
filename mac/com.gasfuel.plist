@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.gasfuel</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/connorvandam/SERVER FILES/gas-fuel/push_fuel.py</string>
+    </array>
+    <!-- 6:40am Mac local time (Eastern), ahead of the 7am gas call -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>6</integer>
+        <key>Minute</key>
+        <integer>40</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/connorvandam/SERVER FILES/gas-fuel/fuel.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/connorvandam/SERVER FILES/gas-fuel/fuel.log</string>
+</dict>
+</plist>

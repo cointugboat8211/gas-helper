@@ -101,6 +101,23 @@ class RollingMargin(unittest.TestCase):
         self.assertEqual((margin, rolling), (CFG["margin"], False))
 
 
+class FuelReading(unittest.TestCase):
+    def test_old_readings_are_ignored(self):
+        import json, tempfile
+        from datetime import datetime, timezone
+        from pathlib import Path
+        read_at = datetime(2026, 10, 9, 10, 40, tzinfo=timezone.utc)
+        with tempfile.TemporaryDirectory() as tmp:
+            gas.FUEL_PATH, saved = Path(tmp) / "fuel.json", gas.FUEL_PATH
+            try:
+                self.assertIsNone(gas.read_fuel_percent())
+                gas.FUEL_PATH.write_text(json.dumps({"percent": 62.0, "read_at": read_at.isoformat()}))
+                self.assertEqual(gas.read_fuel_percent(read_at + timedelta(hours=1)), 62.0)
+                self.assertIsNone(gas.read_fuel_percent(read_at + timedelta(hours=30)))
+            finally:
+                gas.FUEL_PATH = saved
+
+
 class Scorecard(unittest.TestCase):
     def test_judges_calls_once_enough_days_have_passed(self):
         import sqlite3

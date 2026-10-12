@@ -6,8 +6,8 @@
     python gas.py test-notify      send a test push to your phone
     python gas.py page             rebuild docs/index.html from stored data
 
-Standard library only. Settings live in config.json; secrets (EIA_API_KEY, NTFY_TOPIC and the
-optional TRUCK_STATUS_URL / TRUCK_API_TOKEN) come from environment variables or a local .env file.
+Standard library only. Settings live in config.json; secrets (EIA_API_KEY, NTFY_TOPIC)
+come from environment variables or a local .env file.
 """
 import argparse
 import json
@@ -25,7 +25,9 @@ ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "data" / "gas.db"
 PAGE_TEMPLATE = ROOT / "page_template.html"
 PAGE_OUT = ROOT / "docs" / "index.html"
-USER_AGENT = "gas-helper/1.0 (personal use; one request per day)"
+FUEL_PATH = ROOT / "data" / "fuel.json"
+FUEL_MAX_AGE_HOURS = 24
+USER_AGENT = "gas-helper/1.0 (personal use; a few requests per day)"
 
 FILL, WAIT, HALF = "FILL NOW", "WAIT", "HALF TANK"
 NOTIFY_HOUR = 7   # Eastern
@@ -191,17 +193,16 @@ def fetch_retail(cfg):
     return as_of, regular("Current Avg."), backfill
 
 
-def fetch_fuel_percent():
-    """Truck's fuel level (0-100) from the GM Truck Remote backend, or None if not set up."""
-    url, token = os.environ.get("TRUCK_STATUS_URL"), os.environ.get("TRUCK_API_TOKEN")
-    if not url or not token:
+def read_fuel_percent(now_utc=None):
+    """Truck's fuel level (0-100) as last published by the Mac Mini (mac/push_fuel.py).
+
+    Returns None if the truck isn't connected or the reading is more than a day old.
+    """
+    if not FUEL_PATH.exists():
         return None
-    body = json.loads(http_get(url, {"Authorization": f"Bearer {token}"}, timeout=90))
-    for category in body["result"]["diagnostics"]:
-        for element in category.get("diagnosticElements", []):
-            if element.get("name") == "FUEL_LEVEL" and element.get("value") is not None:
-                return float(element["value"])
-    raise RuntimeError("Truck status had no fuel level in it")
+    reading = json.loads(FUEL_PATH.read_text(encoding="utf-8"))
+    age = (now_utc or datetime.now(timezone.utc)) - datetime.fromisoformat(reading["read_at"])
+    return float(reading["percent"]) if age <= timedelta(hours=FUEL_MAX_AGE_HOURS) else None
 
 
 # ---------- the rules ----------
@@ -464,13 +465,11 @@ def run(args):
                    [(d.isoformat(), area, p) for d, p in backfill.items()])
     db.commit()
 
-    # Ask the truck once a day (it wakes the truck's modem); midday reuses the morning reading.
-    fuel = earlier[3] if earlier and args.midday else None
-    if fuel is None:
-        try:
-            fuel = fetch_fuel_percent()
-        except Exception as e:
-            print(f"  (couldn't read the truck's fuel level: {e})")
+    try:
+        fuel = read_fuel_percent()
+    except Exception as e:
+        fuel = None
+        print(f"  (couldn't read the truck's fuel level: {e})")
 
     retail = load_retail(db, cfg)
     wholesale = load_prices(db, "wholesale")

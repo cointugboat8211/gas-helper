@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gas call</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7; --surface: #fcfcfb; --border: rgba(11,11,11,0.10);
+    --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7;
+    --retail: #2a78d6; --fair: #eb6834;
+    --fill: #0ca30c; --wait: #d03b3b; --half: #898781;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface: #1a1a19; --border: rgba(255,255,255,0.10);
+      --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835;
+      --retail: #3987e5; --fair: #d95926;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 20px 16px 40px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+          padding: 16px; margin-bottom: 16px; }
+  .eyebrow { color: var(--ink-2); font-size: 13px; }
+  .hero { font-size: 40px; font-weight: 700; line-height: 1.1; margin: 4px 0 6px;
+          display: flex; align-items: center; gap: 12px; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .hero .dot { width: 16px; height: 16px; }
+  .reason { color: var(--ink-2); margin: 0; }
+  .stats { display: flex; flex-wrap: wrap; gap: 8px 28px; margin-top: 14px; }
+  .stats div { font-size: 13px; color: var(--ink-2); }
+  .stats b { display: block; font-size: 20px; font-weight: 600; color: var(--ink); }
+  h2 { font-size: 15px; margin: 0 0 2px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--ink-2);
+            margin: 8px 0 4px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 14px; height: 2px; border-radius: 1px; }
+  #chart { position: relative; }
+  #chart svg { display: block; width: 100%; touch-action: pan-y; }
+  #chart text { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+  #chart text.end { font-size: 12px; font-weight: 600; fill: var(--ink); }
+  #tip { position: absolute; top: 0; pointer-events: none; display: none; white-space: nowrap;
+         background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+         padding: 8px 10px; font-size: 12px; color: var(--ink-2);
+         box-shadow: 0 2px 10px rgba(0,0,0,0.12); }
+  #tip b { color: var(--ink); }
+  #tip div { display: flex; align-items: center; gap: 6px; }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 10px 7px 0; border-bottom: 1px solid var(--grid);
+           vertical-align: top; }
+  th { color: var(--ink-2); font-weight: 500; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.call { white-space: nowrap; font-weight: 600; }
+  td.call .dot { margin-right: 6px; }
+  td.why { color: var(--ink-2); min-width: 220px; }
+  footer { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <section class="card">
+    <div class="eyebrow" id="today-label"></div>
+    <div class="hero" id="hero"></div>
+    <p class="reason" id="reason"></p>
+    <div class="stats" id="stats"></div>
+  </section>
+
+  <section class="card">
+    <h2>Retail vs. fair price, last 30 days</h2>
+    <div class="legend">
+      <span><i class="swatch" style="background:var(--retail)"></i>Retail (state average, regular)</span>
+      <span><i class="swatch" style="background:var(--fair)"></i>Fair (wholesale + margin)</span>
+      <span><i class="dot" style="background:var(--fill)"></i>Fill now</span>
+      <span><i class="dot" style="background:var(--wait)"></i>Wait</span>
+      <span><i class="dot" style="background:var(--half)"></i>Half tank</span>
+    </div>
+    <div id="chart"><div id="tip"></div></div>
+  </section>
+
+  <section class="card">
+    <h2>Daily calls</h2>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Date</th><th>Call</th><th class="num">Retail</th><th class="num">Fair</th>
+          <th class="num">Gap</th><th>Why</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+  <footer id="foot"></footer>
+</main>
+
+<script>
+const D = /*DATA*/null;
+const days = D.days;
+const CALL_COLOR = { "FILL NOW": "var(--fill)", "WAIT": "var(--wait)", "HALF TANK": "var(--half)" };
+const $ = id => document.getElementById(id);
+const usd = v => v == null ? "–" : "$" + v.toFixed(2);
+const gapText = d => d.retail == null || d.fair == null ? "–"
+  : (d.retail >= d.fair ? "+" : "−") + Math.abs((d.retail - d.fair) * 100).toFixed(0) + "¢";
+const fmtDate = (iso, opts) => new Date(iso + "T12:00:00").toLocaleDateString("en-US", opts);
+const el = (tag, attrs, text) => {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const k in attrs) node.setAttribute(k, attrs[k]);
+  if (text != null) node.textContent = text;
+  return node;
+};
+const dot = call => {
+  const i = document.createElement("i");
+  i.className = "dot";
+  i.style.background = CALL_COLOR[call] || "transparent";
+  return i;
+};
+
+// --- today's call ---
+const latest = [...days].reverse().find(d => d.call);
+if (latest) {
+  $("today-label").textContent = fmtDate(latest.date, { weekday: "long", month: "long", day: "numeric" });
+  $("hero").append(dot(latest.call), latest.call);
+  $("reason").textContent = latest.reason;
+  const stats = [["Retail", usd(latest.retail)], ["Fair", usd(latest.fair)], ["Gap", gapText(latest)],
+                 ["Wholesale", usd(D.wholesale)]];
+  for (const [label, value] of stats) {
+    const div = document.createElement("div"), b = document.createElement("b");
+    b.textContent = value;
+    div.append(b, label);
+    $("stats").append(div);
+  }
+} else {
+  $("hero").textContent = "No call yet";
+}
+
+// --- table (newest first) ---
+for (const d of [...days].reverse()) {
+  if (!d.call && d.retail == null) continue;
+  const tr = document.createElement("tr");
+  const cell = (cls, text) => { const td = document.createElement("td"); td.className = cls;
+                                td.textContent = text; tr.append(td); return td; };
+  cell("", fmtDate(d.date, { weekday: "short", month: "short", day: "numeric" }));
+  const c = cell("call", "");
+  if (d.call) c.append(dot(d.call), d.call); else c.textContent = "–";
+  cell("num", usd(d.retail)); cell("num", usd(d.fair)); cell("num", gapText(d));
+  cell("why", d.reason || "Backfilled price (before the helper started)");
+  $("rows").append(tr);
+}
+$("foot").textContent = `Updated ${D.generated}. Fair = NY Harbor wholesale gasoline (EIA` +
+  (D.wholesale_date ? `, latest ${fmtDate(D.wholesale_date, { month: "short", day: "numeric" })}` : "") +
+  `) + $${D.margin.toFixed(2)} taxes/margin. Retail: AAA ${D.state} average.`;
+
+// --- chart ---
+function draw() {
+  const box = $("chart"), tip = $("tip");
+  box.querySelector("svg")?.remove();
+  const W = box.clientWidth, H = 290, m = { t: 12, r: 52, b: 46, l: 42 };
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, height: H, role: "img",
+    "aria-label": "Line chart of retail and fair gas price over the last 30 days" });
+  const vals = days.flatMap(d => [d.retail, d.fair]).filter(v => v != null);
+  if (!vals.length) { box.append(svg); return; }
+  const step = [0.05, 0.1, 0.2, 0.5, 1].find(s => (Math.max(...vals) - Math.min(...vals)) / s <= 5) || 2;
+  const lo = Math.floor(Math.min(...vals) / step) * step, hi = Math.ceil(Math.max(...vals) / step) * step || lo + step;
+  const x = i => m.l + i * (W - m.l - m.r) / (days.length - 1);
+  const y = v => m.t + (hi - v) * (H - m.t - m.b) / ((hi - lo) || step);
+  const base = H - m.b;
+
+  for (let v = lo; v <= hi + 1e-9; v += step) {
+    svg.append(el("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: "var(--grid)" }));
+    svg.append(el("text", { x: m.l - 6, y: y(v) + 4, "text-anchor": "end" }, "$" + v.toFixed(2)));
+  }
+  svg.append(el("line", { x1: m.l, x2: W - m.r, y1: base, y2: base, stroke: "var(--axis)" }));
+  const every = W < 520 ? 7 : 4;
+  days.forEach((d, i) => {
+    if ((days.length - 1 - i) % every === 0)
+      svg.append(el("text", { x: x(i), y: base + 16, "text-anchor": "middle" },
+                    fmtDate(d.date, { month: "short", day: "numeric" })));
+    if (d.call) svg.append(el("circle", { cx: x(i), cy: base + 32, r: 4, fill: CALL_COLOR[d.call] }));
+  });
+  svg.append(el("text", { x: m.l - 6, y: base + 36, "text-anchor": "end" }, "Call"));
+
+  const ends = [];
+  for (const [key, color] of [["fair", "var(--fair)"], ["retail", "var(--retail)"]]) {
+    const pts = days.map((d, i) => [i, d[key]]).filter(p => p[1] != null);
+    if (!pts.length) continue;
+    svg.append(el("path", { d: pts.map((p, j) => (j ? "L" : "M") + x(p[0]) + " " + y(p[1])).join(""),
+      fill: "none", stroke: color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+    // Mark individual observations while history is sparse, and always the latest point.
+    const marked = pts.length <= 12 ? pts : pts.slice(-1);
+    for (const p of marked)
+      svg.append(el("circle", { cx: x(p[0]), cy: y(p[1]), r: 4, fill: color,
+                                stroke: "var(--surface)", "stroke-width": 2 }));
+    const last = pts[pts.length - 1];
+    ends.push({ x: x(last[0]) + 8, y: y(last[1]) + 4, text: usd(last[1]) });
+  }
+  // Keep the two end labels from overlapping.
+  if (ends.length === 2 && Math.abs(ends[0].y - ends[1].y) < 14) {
+    const [top, bottom] = ends[0].y < ends[1].y ? ends : [ends[1], ends[0]];
+    const mid = (top.y + bottom.y) / 2;
+    top.y = mid - 7; bottom.y = mid + 7;
+  }
+  for (const e of ends) svg.append(el("text", { x: e.x, y: e.y, class: "end" }, e.text));
+
+  const cross = el("line", { y1: m.t, y2: base, stroke: "var(--axis)", visibility: "hidden" });
+  svg.append(cross);
+  svg.addEventListener("pointermove", ev => {
+    const r = svg.getBoundingClientRect();
+    const i = Math.max(0, Math.min(days.length - 1,
+      Math.round((ev.clientX - r.left - m.l) / ((W - m.l - m.r) / (days.length - 1)))));
+    const d = days[i];
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i));
+    cross.setAttribute("visibility", "visible");
+    tip.replaceChildren();
+    const line = (label, value, color, round) => {
+      const div = document.createElement("div");
+      if (color) { const s = document.createElement("i"); s.className = round ? "dot" : "swatch";
+                   s.style.background = color; div.append(s); }
+      const b = document.createElement("b"); b.textContent = value;
+      div.append(label, b); tip.append(div);
+    };
+    line("", fmtDate(d.date, { weekday: "short", month: "short", day: "numeric" }));
+    line("Retail ", usd(d.retail), "var(--retail)");
+    line("Fair ", usd(d.fair), "var(--fair)");
+    line("Gap ", gapText(d));
+    if (d.call) line("", d.call, CALL_COLOR[d.call], true);
+    tip.style.display = "block";
+    const left = x(i) + 12 + tip.offsetWidth > W ? x(i) - 12 - tip.offsetWidth : x(i) + 12;
+    tip.style.left = Math.max(0, left) + "px";
+  });
+  svg.addEventListener("pointerleave", () => {
+    cross.setAttribute("visibility", "hidden"); tip.style.display = "none";
+  });
+  box.append(svg);
+}
+draw();
+addEventListener("resize", draw);
+</script>
+</body>
+</html>

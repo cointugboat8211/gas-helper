@@ -1,0 +1,37 @@
+name: Daily gas call
+
+on:
+  schedule:
+    # GitHub cron is UTC and ignores daylight saving, so fire at both possible
+    # "7am Eastern" hours; gas.py --scheduled acts on the right one and skips the other.
+    - cron: "3 11 * * *"
+    - cron: "3 12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: daily-gas-call
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Make the call
+        env:
+          EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        # A manual "Run workflow" click always runs; the schedule runs once per day.
+        run: python gas.py run ${{ github.event_name == 'schedule' && '--scheduled' || '' }}
+      - name: Save history and page
+        if: always()
+        run: |
+          git config user.name "gas-helper"
+          git config user.email "gas-helper@users.noreply.github.com"
+          git add data/gas.db docs/index.html
+          git diff --cached --quiet || git commit -m "Daily update"
+          git push

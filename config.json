@@ -1,0 +1,16 @@
+{
+  "state": "MI",
+  "tank_gallons": 24,
+  "margin": 0.65,
+  "retail_jump": 0.15,
+  "retail_jump_days": 3,
+  "falling_days": 7,
+  "falling_tolerance": 0.005,
+  "near_fair": 0.1,
+  "wholesale_jump": 0.1,
+  "wholesale_jump_days": 3,
+  "wholesale_max_age_days": 8,
+  "eia_series": "EER_EPMRU_PF4_Y35NY_DPG",
+  "ntfy_server": "https://ntfy.sh",
+  "page_url": "https://cointugboat8211.github.io/gas-helper/"
+}

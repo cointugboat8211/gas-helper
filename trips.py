@@ -17,6 +17,8 @@ TRIPS_PATH = ROOT / "data" / "trips.json"
 USER_AGENT = "gas-helper/1.0 (personal use; github.com/cointugboat8211/gas-helper)"
 AAA_CRAWL_DELAY = 10  # seconds between AAA requests, as its robots.txt asks
 SAMPLE_MILES = 8      # how often to check which county the route is in
+PATH_MILES = 1.5      # spacing of the route points kept for the map
+STATION_METERS = 2500  # how far off the route a gas station can be and still be shown
 
 # Best-known town in each Michigan county, so a county reads as a place you'd stop.
 MI_TOWNS = {
@@ -162,8 +164,52 @@ def plan_route(destination, home):
     for mile, plat, plon in points:
         samples.append((mile, county_at(plat, plon)))
         time.sleep(0.15)
+    legs = legs_from_samples(samples, total)
+
+    # A thinned copy of the route for the map: (mile, lat, lon).
+    path, next_mile = [], 0.0
+    for (plon, plat), t in zip(coords, travelled):
+        if t * scale >= next_mile or t == travelled[-1]:
+            path.append((t * scale, plat, plon))
+            next_mile = t * scale + PATH_MILES
+    for leg in legs:
+        middle = (leg["start"] + leg["end"]) / 2
+        _, leg["lat"], leg["lon"] = min(path, key=lambda p: abs(p[0] - middle))
+        leg["lat"], leg["lon"] = round(leg["lat"], 4), round(leg["lon"], 4)
+    stations = []
+    for attempt in range(3):  # the public Overpass server is often briefly busy
+        try:
+            stations = stations_near(path, legs)
+            break
+        except Exception as e:
+            print(f"  (gas station lookup attempt {attempt + 1} failed: {e})")
+            time.sleep(20)
     return {"destination": name, "miles": round(total), "hours": round(route["duration"] / 3600, 1),
-            "legs": legs_from_samples(samples, total)}
+            "legs": legs, "path": [[round(plat, 4), round(plon, 4)] for _, plat, plon in path],
+            "stations": stations}
+
+
+def stations_near(path, legs):
+    """Gas stations within STATION_METERS of the route, from OpenStreetMap (locations only)."""
+    line = ",".join(f"{plat:.4f},{plon:.4f}" for _, plat, plon in path[::2] + path[-1:])
+    query = f'[out:json][timeout:120];nwr(around:{STATION_METERS},{line})["amenity"="fuel"];out center tags;'
+    req = urllib.request.Request("https://overpass-api.de/api/interpreter",
+                                 data=urllib.parse.urlencode({"data": query}).encode(),
+                                 headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=150) as resp:
+        elements = json.load(resp)["elements"]
+    stations = []
+    for el in elements:
+        spot = el if "lat" in el else el.get("center")
+        if not spot:
+            continue
+        tags = el.get("tags", {})
+        # Nearest route point tells us how far along the trip, and so which county leg.
+        mile = min(path, key=lambda p: (p[1] - spot["lat"]) ** 2 + ((p[2] - spot["lon"]) * 0.7) ** 2)[0]
+        leg = next((i for i, l in enumerate(legs) if l["start"] <= mile <= l["end"]), len(legs) - 1)
+        stations.append({"lat": round(spot["lat"], 4), "lon": round(spot["lon"], 4), "leg": leg,
+                         "name": (tags.get("brand") or tags.get("name") or "Gas station")[:40]})
+    return sorted(stations, key=lambda s: (s["leg"], s["lat"]))
 
 
 # ---------- county prices ----------
@@ -238,6 +284,7 @@ def summarize(trip, prices, changes, cfg):
     priced = [l for l in legs if l["price"] is not None]
     summary = {"id": trip["id"], "destination": trip["destination"], "date": trip["date"],
                "miles": trip["miles"], "hours": trip.get("hours"), "legs": legs,
+               "path": trip.get("path"), "stations": trip.get("stations", []),
                "plan": None, "text": "No county prices for this route yet."}
     if not priced:
         return summary

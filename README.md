@@ -84,12 +84,16 @@ or with `python gas.py trip-add "Houghton, MI" 2026-11-01`. The helper then:
 - marks the cheapest and priciest areas and works out where to buy gas: the cheapest plan
   that never drops below `trip_reserve_gallons`, counting `trip_stop_cost` dollars of hassle
   per stop so it won't add a stop to save a few cents;
+- draws a map of the route with the gas stations near it (from OpenStreetMap), each dot
+  colored by its county's average price, and labels the cheapest area, the priciest, and the
+  planned stops. Station prices themselves aren't available, only where the stations are;
 - sends a notification with the plan the morning before and the morning of the trip.
 
 County averages compare areas, not stations: the cheapest station in a pricey county can
 still beat the average of a cheap one. Routes come from OpenStreetMap services (Nominatim for
-the place, the OSRM demo server for the route) and county lookups from the FCC's Area API;
-all three are only called when a trip is added. Trips are one-way.
+the place, the OSRM demo server for the route, Overpass for gas station locations) and
+county lookups from the FCC's Area API; these are only called when a trip is added. The map
+itself uses Leaflet with OpenStreetMap tiles. Trips are one-way.
 
 ## The rules
 

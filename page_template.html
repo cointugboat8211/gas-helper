@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gas call</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" defer></script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -103,6 +105,19 @@
   .linkish { font: inherit; font-size: 13px; color: var(--ink-2); background: none; border: 0;
              text-decoration: underline; cursor: pointer; padding: 0; }
   .trip .reason { margin: 8px 0 12px; }
+  .map { height: 380px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 6px;
+         background: var(--grid); z-index: 0; }
+  .map-key { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 12px;
+             color: var(--ink-2); margin-bottom: 12px; }
+  .map-key i { display: inline-block; width: 12px; height: 12px; border-radius: 50%;
+               border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.25); margin-right: -6px; }
+  .map-key i:last-of-type { margin-right: 0; }
+  .pill { background: #F8F3E8; color: #262820; border: 1px solid rgba(38,40,32,0.35);
+          border-radius: 10px; padding: 2px 8px; font: 600 12px system-ui, sans-serif;
+          white-space: nowrap; box-shadow: 0 1px 4px rgba(0,0,0,0.25); width: max-content;
+          transform: translate(10px, -50%); }
+  .leaflet-popup-content { font: 13px/1.4 system-ui, sans-serif; color: #262820; margin: 10px 12px; }
+  .leaflet-popup-content b { display: block; }
   td.area { min-width: 130px; }
   td.area small { display: block; color: var(--ink-2); }
   .bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--accent);
@@ -226,8 +241,11 @@ const showPull = px => {
   p.style.transform = `translate(-50%, ${Math.min(px / 2, 70) - 40}px)`;
   p.textContent = px > PULL_AT ? "Release to refresh" : "Pull to refresh";
 };
-addEventListener("touchstart", e => { pullStart = scrollY <= 0 ? e.touches[0].clientY : null; pulled = 0; },
-                 { passive: true });
+addEventListener("touchstart", e => {
+  // Dragging the map is not a pull-to-refresh.
+  const onMap = e.target.closest && e.target.closest(".map");
+  pullStart = scrollY <= 0 && !onMap ? e.touches[0].clientY : null; pulled = 0;
+}, { passive: true });
 addEventListener("touchmove", e => {
   if (pullStart == null) return;
   pulled = scrollY <= 0 ? e.touches[0].clientY - pullStart : 0;
@@ -290,9 +308,13 @@ if (D.repo) {
 }
 
 // --- tabs ---
+const mapJobs = [];
 const showView = name => {
   $("view-today").hidden = name !== "today";
   $("view-trips").hidden = name !== "trips";
+  // Maps are drawn the first time the tab is shown, once the map library has loaded.
+  const drawMaps = () => { while (mapJobs.length) mapJobs.shift()(); };
+  if (name === "trips") document.readyState === "complete" ? drawMaps() : addEventListener("load", drawMaps, { once: true });
   for (const b of document.querySelectorAll(".tabbar button"))
     b.setAttribute("aria-selected", b.dataset.view === name);
   try { history.replaceState(null, "", name === "trips" ? "#trips" : location.pathname); } catch {}
@@ -330,6 +352,44 @@ for (const trip of D.trips) {
   const priced = trip.legs.filter(l => l.price != null).map(l => l.price);
   const lo = Math.min(...priced), hi = Math.max(...priced);
   const stops = new Map((trip.plan || []).map(b => [b.name, b]));
+
+  // Map: the route, gas stations near it coloured by their area's average price,
+  // and labels on the cheapest area, the priciest, and the planned stops.
+  if (trip.path && priced.length) {
+    const SCALE = ["#3F7D3A", "#8FB573", "#CDBDA4", "#D9925F", "#B8532F"];  // cheaper -> pricier
+    const shade = p => SCALE[Math.min(4, Math.floor((hi > lo ? (p - lo) / (hi - lo) : 0) * 5))];
+    const mapEl = node("div", "map");
+    const key = node("div", "map-key");
+    key.append(`Area average: $${lo.toFixed(2)} `);
+    for (const c of SCALE) { const i = node("i"); i.style.background = c; key.append(i); }
+    key.append(` $${hi.toFixed(2)} · ${trip.stations.length} gas stations near the route. Dots show where stations are; the color is the county average, not that station's price.`);
+    card.append(mapEl, key);
+    mapJobs.push(() => {
+      if (!window.L) { mapEl.remove(); key.textContent = "The map couldn't load (no connection to the map service)."; return; }
+      const map = L.map(mapEl, { scrollWheelZoom: false });
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 17, attribution: "© OpenStreetMap contributors" }).addTo(map);
+      const line = L.polyline(trip.path, { color: "#262820", weight: 3, opacity: 0.8 }).addTo(map);
+      for (const s of trip.stations) {
+        const leg = trip.legs[s.leg];
+        if (!leg || leg.price == null) continue;
+        const info = node("div");
+        info.append(node("b", "", s.name), `${leg.label}: $${leg.price.toFixed(2)} average`);
+        L.circleMarker([s.lat, s.lon], { radius: 5, color: "#fff", weight: 1.5, fillColor: shade(leg.price),
+                                         fillOpacity: 1 }).bindPopup(info).addTo(map);
+      }
+      trip.legs.forEach((leg, i) => {
+        const buy = stops.get(i === 0 ? "home" : leg.label);
+        if (leg.price == null || leg.lat == null || !(leg.tag || buy)) return;
+        const words = [buy ? (buy.fill ? "Fill up" : `Stop: ${Math.round(buy.gallons)} gal`) : null,
+                       leg.tag === "cheapest" ? "Cheapest" : leg.tag === "priciest" ? "Priciest" : null,
+                       "$" + leg.price.toFixed(2)].filter(Boolean).join(" · ");
+        L.marker([leg.lat, leg.lon], { interactive: false,
+          icon: L.divIcon({ className: "", iconSize: [0, 0], html: node("div", "pill", words) }) }).addTo(map);
+      });
+      map.fitBounds(line.getBounds(), { padding: [24, 24] });
+    });
+  }
   const table = node("table"), body = node("tbody");
   const hr = node("tr");
   for (const [label, cls] of [["Mile", "num"], ["Area", ""], ["Average price", ""], ["", ""]])

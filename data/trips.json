@@ -1,1 +1,101 @@
-[]
+[
+ {
+  "id": "houghton-michigan-2026-10-23",
+  "date": "2026-10-23",
+  "destination": "Houghton, Michigan",
+  "miles": 503,
+  "hours": 10.2,
+  "legs": [
+   {
+    "state": "MI",
+    "county": "Barry",
+    "start": 0.0,
+    "end": 4.0
+   },
+   {
+    "state": "MI",
+    "county": "Ionia",
+    "start": 4.0,
+    "end": 36.3
+   },
+   {
+    "state": "MI",
+    "county": "Montcalm",
+    "start": 36.3,
+    "end": 68.9
+   },
+   {
+    "state": "MI",
+    "county": "Isabella",
+    "start": 68.9,
+    "end": 101.0
+   },
+   {
+    "state": "MI",
+    "county": "Clare",
+    "start": 101.0,
+    "end": 126.1
+   },
+   {
+    "state": "MI",
+    "county": "Roscommon",
+    "start": 126.1,
+    "end": 150.2
+   },
+   {
+    "state": "MI",
+    "county": "Crawford",
+    "start": 150.2,
+    "end": 174.3
+   },
+   {
+    "state": "MI",
+    "county": "Otsego",
+    "start": 174.3,
+    "end": 198.8
+   },
+   {
+    "state": "MI",
+    "county": "Cheboygan",
+    "start": 198.8,
+    "end": 248.0
+   },
+   {
+    "state": "MI",
+    "county": "Mackinac",
+    "start": 248.0,
+    "end": 312.4
+   },
+   {
+    "state": "MI",
+    "county": "Schoolcraft",
+    "start": 312.4,
+    "end": 352.9
+   },
+   {
+    "state": "MI",
+    "county": "Alger",
+    "start": 352.9,
+    "end": 393.0
+   },
+   {
+    "state": "MI",
+    "county": "Marquette",
+    "start": 393.0,
+    "end": 449.2
+   },
+   {
+    "state": "MI",
+    "county": "Baraga",
+    "start": 449.2,
+    "end": 489.3
+   },
+   {
+    "state": "MI",
+    "county": "Houghton",
+    "start": 489.3,
+    "end": 502.7
+   }
+  ]
+ }
+]

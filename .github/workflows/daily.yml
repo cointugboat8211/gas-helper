@@ -3,9 +3,12 @@ name: Daily gas call
 on:
   schedule:
     # GitHub cron is UTC and ignores daylight saving, so fire at both possible
-    # "7am Eastern" hours; gas.py --scheduled acts on the right one and skips the other.
+    # "7am Eastern" hours and both possible "noon Eastern" hours; gas.py --scheduled
+    # acts on the right ones and skips the others.
     - cron: "3 11 * * *"
     - cron: "3 12 * * *"
+    - cron: "3 16 * * *"
+    - cron: "3 17 * * *"
   workflow_dispatch:
     inputs:
       notify:
@@ -30,6 +33,8 @@ jobs:
         env:
           EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          TRUCK_STATUS_URL: ${{ secrets.TRUCK_STATUS_URL }}
+          TRUCK_API_TOKEN: ${{ secrets.TRUCK_API_TOKEN }}
         # A manual run always runs; the schedule runs once per day. The app's
         # "Get new prices" button starts a manual run with notify off.
         run: >-

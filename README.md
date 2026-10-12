@@ -94,6 +94,12 @@ Checked in this order; the first match wins.
 | 3 | Wholesale is up 10¢+ over 3 trading days | FILL NOW |
 | 4 | Otherwise | HALF TANK |
 
+A second, quiet check runs around noon Eastern. It only notifies if the call has changed to
+WAIT or FILL NOW since the morning.
+
+The page's **Scorecard** judges each call by what retail did over the next 5 days: WAIT was
+right if the price fell 3¢ or more, FILL NOW was right if it rose 3¢ or more.
+
 **Fair retail** = latest wholesale price + margin. The margin tunes itself (see `margin_mode` below).
 
 ## Settings (`config.json`)
@@ -110,7 +116,10 @@ Checked in this order; the first match wins.
 | `wholesale_jump`, `wholesale_jump_days` | 0.10, 3 | Rule 3 |
 | `wholesale_max_age_days` | 8 | Rule 3 is ignored when the newest wholesale price is older than this |
 | `tank_gallons` | 24 | Used for the "buy about N gal" hint |
-| `state` | MI | State for the retail average |
+| `tank_full_percent`, `tank_low_percent` | 75, 15 | With the truck connected: above "full" the notification is silent; below "low" a WAIT says to buy just enough to get by |
+| `score_days`, `score_threshold` | 5, 0.03 | Scorecard: days to look ahead, and the move (dollars) that counts as right |
+| `state`, `metro` | MI, Grand Rapids-Muskegon-Holland | Retail area. `metro` must match a metro name on AAA's state page; leave it empty for the statewide average |
+| `area_label` | Grand Rapids area | Short name for the area on the page |
 | `eia_series` | `EER_EPMRU_PF4_Y35NY_DPG` | EIA wholesale series |
 | `page_url` | "" | If set, tapping the notification opens it |
 
@@ -120,7 +129,14 @@ Checked in this order; the first match wins.
   EIA does not publish a NY Harbor RBOB spot series (its RBOB futures series ended in April
   2024); this is the closest free daily series and moves with RBOB. The values are daily, but
   EIA posts them in weekly batches, so the newest one can be up to about a week old.
-- **Retail:** AAA's public state page (`gasprices.aaa.com/?state=MI`), one request per day.
+- **Fresher wholesale (rule 3 only):** the NY Harbor RBOB spot close from EIA's daily prices
+  page (`eia.gov/todayinenergy/prices.php`), which is the previous trading day's price. It
+  gives one day at a time, so the rule switches to it once a few days have been collected.
+  EIA republishes these figures from Refinitiv with permission; this is for personal use.
+- **Truck fuel level (optional):** if `TRUCK_STATUS_URL` and `TRUCK_API_TOKEN` are set, the
+  morning run asks the GM Truck Remote backend for the fuel level and fits the message to it.
+- **Retail:** AAA's public state page (`gasprices.aaa.com/?state=MI`), read a few times a day
+  (morning call, midday check, manual refreshes). It includes the metro averages.
   The site posts no terms of use and its `robots.txt` allows crawling (with a 10-second
   delay). The page says "All Rights Reserved", so keep this to personal use and don't
   republish the numbers. EIA has no Michigan retail series.

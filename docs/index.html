@@ -68,6 +68,7 @@
   td.call { white-space: nowrap; font-weight: 600; }
   td.call .dot { margin-right: 6px; }
   td.why { color: var(--ink-2); min-width: 220px; }
+  td.then { color: var(--ink-2); min-width: 130px; }
   body { overscroll-behavior-y: contain; }
   .topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px;
             margin-bottom: 12px; color: var(--ink-2); font-size: 13px; }
@@ -110,7 +111,7 @@
   <section class="card">
     <h2>Retail vs. fair price, last 30 days</h2>
     <div class="legend">
-      <span><i class="swatch" style="background:var(--retail)"></i>Retail (state average, regular)</span>
+      <span><i class="swatch" style="background:var(--retail)"></i><span id="retail-label">Retail</span></span>
       <span><i class="swatch" style="background:var(--fair)"></i>Fair (wholesale + margin)</span>
       <span><i class="dot" style="background:var(--fill)"></i>Fill now</span>
       <span><i class="dot" style="background:var(--wait)"></i>Wait</span>
@@ -120,11 +121,17 @@
   </section>
 
   <section class="card">
+    <h2>Scorecard</h2>
+    <p class="reason" id="score-note"></p>
+    <div class="stats" id="score"></div>
+  </section>
+
+  <section class="card">
     <h2>Daily calls</h2>
     <div class="scroll">
       <table>
         <thead><tr><th>Date</th><th>Call</th><th class="num">Retail</th><th class="num">Fair</th>
-          <th class="num">Gap</th><th>Why</th></tr></thead>
+          <th class="num">Gap</th><th>Why</th><th>What happened</th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
     </div>
@@ -133,7 +140,7 @@
 </main>
 
 <script>
-const D = {"days": [{"date": "2026-09-13", "retail": null, "fair": 4.026, "call": null, "reason": null}, {"date": "2026-09-14", "retail": null, "fair": 4.064, "call": null, "reason": null}, {"date": "2026-09-15", "retail": null, "fair": 4.1850000000000005, "call": null, "reason": null}, {"date": "2026-09-16", "retail": null, "fair": 4.259, "call": null, "reason": null}, {"date": "2026-09-17", "retail": null, "fair": 4.211, "call": null, "reason": null}, {"date": "2026-09-18", "retail": null, "fair": 4.243, "call": null, "reason": null}, {"date": "2026-09-19", "retail": null, "fair": 4.243, "call": null, "reason": null}, {"date": "2026-09-20", "retail": null, "fair": 4.243, "call": null, "reason": null}, {"date": "2026-09-21", "retail": null, "fair": 4.176, "call": null, "reason": null}, {"date": "2026-09-22", "retail": null, "fair": 4.2010000000000005, "call": null, "reason": null}, {"date": "2026-09-23", "retail": null, "fair": 4.336, "call": null, "reason": null}, {"date": "2026-09-24", "retail": null, "fair": 4.2940000000000005, "call": null, "reason": null}, {"date": "2026-09-25", "retail": null, "fair": 4.143, "call": null, "reason": null}, {"date": "2026-09-26", "retail": null, "fair": 4.143, "call": null, "reason": null}, {"date": "2026-09-27", "retail": null, "fair": 4.143, "call": null, "reason": null}, {"date": "2026-09-28", "retail": null, "fair": 4.0680000000000005, "call": null, "reason": null}, {"date": "2026-09-29", "retail": null, "fair": 3.979, "call": null, "reason": null}, {"date": "2026-09-30", "retail": null, "fair": 4.182, "call": null, "reason": null}, {"date": "2026-10-01", "retail": null, "fair": 4.136, "call": null, "reason": null}, {"date": "2026-10-02", "retail": null, "fair": 4.048, "call": null, "reason": null}, {"date": "2026-10-03", "retail": null, "fair": 4.048, "call": null, "reason": null}, {"date": "2026-10-04", "retail": 4.4695, "fair": 4.048, "call": null, "reason": null}, {"date": "2026-10-05", "retail": 4.4557, "fair": 3.968, "call": null, "reason": null}, {"date": "2026-10-06", "retail": null, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-07", "retail": null, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-08", "retail": null, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-09", "retail": null, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-10", "retail": 4.6676, "fair": 4.046, "call": null, "reason": null}, {"date": "2026-10-11", "retail": 4.6614, "fair": 4.046, "call": "HALF TANK", "reason": "No strong signal: retail $4.66 is 62\u00a2 above fair ($4.05). Buy about 12 gal. (Only 3 days of retail history so far.)"}, {"date": "2026-10-12", "retail": 4.6556, "fair": 4.046, "call": "HALF TANK", "reason": "No strong signal: retail $4.66 is 61\u00a2 above fair ($4.05). Buy about 12 gal. (Only 4 days of retail history so far.)"}], "margin": 0.65, "margin_note": "fixed until there are 14 days of history, then auto-tuned", "state": "MI", "wholesale": 3.396, "wholesale_date": "2026-10-06", "generated": "Oct 12, 2026 06:20 AM ET", "stamp": "2026-10-12T10:20:58+00:00", "repo": "cointugboat8211/gas-helper"};
+const D = {"days": [{"date": "2026-09-13", "retail": null, "fair": 4.3759999999999994, "call": null, "reason": null, "outcome": null}, {"date": "2026-09-14", "retail": null, "fair": 4.414, "call": null, "reason": null, "outcome": null}, {"date": "2026-09-15", "retail": null, "fair": 4.535, "call": null, "reason": null, "outcome": null}, {"date": "2026-09-16", "retail": null, "fair": 4.609, "call": null, "reason": null, "outcome": null}, {"date": "2026-09-17", "retail": null, "fair": 4.561, "call": null, "reason": null, "outcome": null}, {"date": "2026-09-18", "retail": null, "fair": 4.593, "call": null, "reason": null, "outcome": null}, {"date": "2026-09-19", "retail": null, "fair": 4.593, "call": null, "reason": null, "outcome": null}, {"date": "2026-09-20", "retail": null, "fair": 4.593, "call": null, "reason": null, "outcome": null}, {"date": "2026-09-21", "retail": null, "fair": 4.526, "call": null, "reason": null, "outcome": null}, {"date": "2026-09-22", "retail": null, "fair": 4.551, "call": null, "reason": null, "outcome": null}, {"date": "2026-09-23", "retail": null, "fair": 4.686, "call": null, "reason": null, "outcome": null}, {"date": "2026-09-24", "retail": null, "fair": 4.644, "call": null, "reason": null, "outcome": null}, {"date": "2026-09-25", "retail": null, "fair": 4.493, "call": null, "reason": null, "outcome": null}, {"date": "2026-09-26", "retail": null, "fair": 4.493, "call": null, "reason": null, "outcome": null}, {"date": "2026-09-27", "retail": null, "fair": 4.493, "call": null, "reason": null, "outcome": null}, {"date": "2026-09-28", "retail": null, "fair": 4.418, "call": null, "reason": null, "outcome": null}, {"date": "2026-09-29", "retail": null, "fair": 4.329000000000001, "call": null, "reason": null, "outcome": null}, {"date": "2026-09-30", "retail": null, "fair": 4.532, "call": null, "reason": null, "outcome": null}, {"date": "2026-10-01", "retail": null, "fair": 4.486000000000001, "call": null, "reason": null, "outcome": null}, {"date": "2026-10-02", "retail": null, "fair": 4.398, "call": null, "reason": null, "outcome": null}, {"date": "2026-10-03", "retail": null, "fair": 4.398, "call": null, "reason": null, "outcome": null}, {"date": "2026-10-04", "retail": null, "fair": 4.398, "call": null, "reason": null, "outcome": null}, {"date": "2026-10-05", "retail": 4.4158, "fair": 4.318, "call": null, "reason": null, "outcome": null}, {"date": "2026-10-06", "retail": null, "fair": 4.396, "call": null, "reason": null, "outcome": null}, {"date": "2026-10-07", "retail": null, "fair": 4.396, "call": null, "reason": null, "outcome": null}, {"date": "2026-10-08", "retail": null, "fair": 4.396, "call": null, "reason": null, "outcome": null}, {"date": "2026-10-09", "retail": null, "fair": 4.396, "call": null, "reason": null, "outcome": null}, {"date": "2026-10-10", "retail": null, "fair": 4.396, "call": null, "reason": null, "outcome": null}, {"date": "2026-10-11", "retail": 4.7349, "fair": 4.046, "call": "HALF TANK", "reason": "No strong signal: retail $4.66 is 62\u00a2 above fair ($4.05). Buy about 12 gal. (Only 3 days of retail history so far.)", "outcome": null}, {"date": "2026-10-12", "retail": 4.7242, "fair": 4.396, "call": "HALF TANK", "reason": "No strong signal: retail $4.72 is 33\u00a2 above fair ($4.40). (Only 3 days of retail history so far.) Buy about 12 gal.", "outcome": null}], "scorecard": {"days": 5, "wait": [0, 0], "fill": [0, 0], "half": [0, null]}, "fuel": null, "area": "Grand Rapids area", "margin": 1.0, "margin_note": "fixed until there are 14 days of history, then auto-tuned", "wholesale": 3.396, "wholesale_date": "2026-10-06", "generated": "Oct 12, 2026 12:38 PM ET", "stamp": "2026-10-12T16:38:08+00:00", "repo": "cointugboat8211/gas-helper"};
 const days = D.days;
 const CALL_COLOR = { "FILL NOW": "var(--fill)", "WAIT": "var(--wait)", "HALF TANK": "var(--half)" };
 const $ = id => document.getElementById(id);
@@ -235,6 +242,7 @@ if (latest) {
   $("reason").textContent = latest.reason;
   const stats = [["Retail", usd(latest.retail)], ["Fair", usd(latest.fair)], ["Gap", gapText(latest)],
                  ["Wholesale", usd(D.wholesale)]];
+  if (D.fuel != null) stats.push(["Tank", Math.round(D.fuel) + "%"]);
   for (const [label, value] of stats) {
     const div = document.createElement("div"), b = document.createElement("b");
     b.textContent = value;
@@ -256,11 +264,30 @@ for (const d of [...days].reverse()) {
   if (d.call) c.append(dot(d.call), d.call); else c.textContent = "–";
   cell("num", usd(d.retail)); cell("num", usd(d.fair)); cell("num", gapText(d));
   cell("why", d.reason || "Backfilled price (before the helper started)");
+  const o = d.outcome;
+  cell("then", o ? o.text + (o.right == null ? "" : o.right ? " ✓" : " ✗") : d.call ? "Too soon to tell" : "");
   $("rows").append(tr);
 }
 $("foot").textContent = `Updated ${D.generated}. Fair = NY Harbor wholesale gasoline (EIA` +
   (D.wholesale_date ? `, latest ${fmtDate(D.wholesale_date, { month: "short", day: "numeric" })}` : "") +
-  `) + $${D.margin.toFixed(2)} taxes/margin (${D.margin_note}). Retail: AAA ${D.state} average.`;
+  `) + $${D.margin.toFixed(2)} taxes/margin (${D.margin_note}). Retail: AAA ${D.area} average.`;
+
+// --- scorecard ---
+$("retail-label").textContent = `Retail (${D.area} average, regular)`;
+{
+  const s = D.scorecard, judged = s.wait[1] + s.fill[1] + s.half[0];
+  $("score-note").textContent = judged
+    ? `How each call looked ${s.days} days later. WAIT is right if the price then dropped; FILL NOW is right if it rose.`
+    : `Nothing to score yet. Each call is judged by what the price does over the next ${s.days} days.`;
+  const tile = (label, value) => {
+    const div = document.createElement("div"), b = document.createElement("b");
+    b.textContent = value; div.append(b, label); $("score").append(div);
+  };
+  if (s.wait[1]) tile("WAIT calls right", `${s.wait[0]} of ${s.wait[1]}`);
+  if (s.fill[1]) tile("FILL NOW calls right", `${s.fill[0]} of ${s.fill[1]}`);
+  if (s.half[0]) tile(`avg. change after ${s.half[0]} HALF TANK calls`,
+                      (s.half[1] >= 0 ? "+" : "−") + Math.abs(s.half[1] * 100).toFixed(0) + "¢");
+}
 
 // --- chart ---
 function draw() {

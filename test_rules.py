@@ -4,7 +4,7 @@ from datetime import date, timedelta
 
 import gas
 
-CFG = gas.load_config()
+CFG = {**gas.load_config(), "margin": 0.65, "tank_gallons": 24}
 TODAY = date(2026, 10, 9)  # a Friday
 
 
@@ -56,6 +56,32 @@ class Rules(unittest.TestCase):
         self.assertEqual(call, gas.HALF)
         self.assertIn("days of retail history", reason)
 
+    def test_fresh_rbob_rise_means_fill(self):
+        rbob = series([3.00, 3.04, 3.08, 3.12], end=TODAY - timedelta(days=1))
+        call = gas.decide(series([4.00] * 5), flat_wholesale(), CFG, TODAY, rbob)[0]
+        self.assertEqual(call, gas.FILL)
+
+
+class Tank(unittest.TestCase):
+    def test_no_truck_reading_suggests_half_a_tank(self):
+        self.assertEqual(gas.tank_advice(gas.HALF, "Meh.", None, CFG), ("Meh. Buy about 12 gal.", False))
+
+    def test_full_tank_is_quiet(self):
+        reason, quiet = gas.tank_advice(gas.FILL, "Spike coming.", 90, CFG)
+        self.assertTrue(quiet)
+        self.assertIn("90% full", reason)
+
+    def test_fill_says_how_much_room(self):
+        reason, quiet = gas.tank_advice(gas.FILL, "Spike coming.", 25, CFG)
+        self.assertFalse(quiet)
+        self.assertIn("about 18 gal to fill", reason)
+
+    def test_half_tank_never_overfills(self):
+        self.assertIn("buy about 7 gal", gas.tank_advice(gas.HALF, "Meh.", 70, CFG)[0])
+
+    def test_wait_on_empty_says_buy_a_little(self):
+        self.assertIn("just enough to get by", gas.tank_advice(gas.WAIT, "Spiked.", 10, CFG)[0])
+
 
 class RollingMargin(unittest.TestCase):
     def test_uses_fixed_margin_until_enough_history(self):
@@ -73,6 +99,28 @@ class RollingMargin(unittest.TestCase):
         cfg = {**CFG, "margin_mode": "fixed"}
         margin, rolling = gas.current_margin(series([4.00] * 40), series([3.00] * 40), cfg, TODAY)
         self.assertEqual((margin, rolling), (CFG["margin"], False))
+
+
+class Scorecard(unittest.TestCase):
+    def test_judges_calls_once_enough_days_have_passed(self):
+        import sqlite3
+        db = sqlite3.connect(":memory:")
+        db.execute("CREATE TABLE calls (date TEXT, call TEXT, retail REAL, area TEXT)")
+        area = gas.retail_area(CFG)
+        d = lambda n: (TODAY - timedelta(days=n))
+        retail = series([4.50, 4.45, 4.40, 4.38, 4.36, 4.35, 4.34, 4.33, 4.60, 4.58])
+        db.executemany("INSERT INTO calls VALUES (?, ?, ?, ?)", [
+            (d(9).isoformat(), gas.WAIT, 4.50, area),   # fell 15c -> right
+            (d(6).isoformat(), gas.WAIT, 4.38, area),   # fell 5c -> right
+            (d(5).isoformat(), gas.FILL, 4.36, area),   # rose 24c -> right
+            (d(2).isoformat(), gas.FILL, 4.33, area),   # too recent to judge
+            (d(8).isoformat(), gas.FILL, 4.45, "MI"),   # other area, ignored
+        ])
+        outcomes, summary = gas.score_calls(db, retail, CFG)
+        self.assertEqual(summary["wait"], [2, 2])
+        self.assertEqual(summary["fill"], [1, 1])
+        self.assertNotIn(d(2), outcomes)
+        self.assertEqual(outcomes[d(9)]["text"], "Fell 15¢ within 5 days")
 
 
 if __name__ == "__main__":

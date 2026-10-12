@@ -133,9 +133,11 @@ right if the price fell 3¢ or more, FILL NOW was right if it rose 3¢ or more.
   page (`eia.gov/todayinenergy/prices.php`), which is the previous trading day's price. It
   gives one day at a time, so the rule switches to it once a few days have been collected.
   EIA republishes these figures from Refinitiv with permission; this is for personal use.
-- **Truck fuel level:** each morning at 6:40 the Mac Mini runs `mac/push_fuel.py`, which asks
-  the GM Truck Remote backend on the same machine for the fuel level and commits just that
-  number to `data/fuel.json`. The truck backend's token never leaves the Mac. Readings older
+- **Truck fuel level, and the real schedule:** at 7:00am the Mac Mini runs `mac/push_fuel.py`,
+  which asks the GM Truck Remote backend on the same machine for the fuel level and commits
+  just that number to `data/fuel.json`. At noon it checks in again without contacting the
+  truck. Each of those pushes starts the GitHub job, which is what makes the 7am call and the
+  noon check arrive on time; GitHub's own cron schedule is kept only as a fallback. The truck backend's token never leaves the Mac. Readings older
   than 24 hours are ignored. On the Mac it lives in `~/SERVER FILES/gas-fuel/` (log:
   `fuel.log`) and is scheduled by `~/Library/LaunchAgents/com.gasfuel.plist`; it pushes with
   a deploy key that can only write to this repo.

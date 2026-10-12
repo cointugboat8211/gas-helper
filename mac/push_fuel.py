@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Runs on the Mac Mini each morning, before the 7am gas call.
+"""Runs on the Mac Mini at 7:00am and noon (see com.gasfuel.plist).
 
-Reads the truck's fuel level from the GM Truck Remote backend running on the same
-machine and saves just that number to the gas-helper repo as data/fuel.json.
-The truck backend's token never leaves this machine.
+At 7:00 it reads the truck's fuel level from the GM Truck Remote backend running on
+the same machine and saves just that number to the gas-helper repo as data/fuel.json.
+At noon it only checks in, keeping the morning's reading. Either push starts the gas
+call job on GitHub. The truck backend's token never leaves this machine.
 """
 import json
 import os
@@ -58,15 +59,21 @@ def git(*args, cwd=REPO):
 
 
 def publish(percent):
+    """Push the reading; with percent=None, keep the last reading and just check in."""
     if not REPO.exists():
         result = git("clone", "--depth", "1", REMOTE, str(REPO), cwd=HERE)
         if result.returncode:
             sys.exit(f"clone failed: {result.stderr.strip()}")
-    payload = {"percent": percent, "read_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    fuel_file = REPO / "data" / "fuel.json"
     for _ in range(3):  # retry if the repo changed underneath us
         git("fetch", "--depth", "1", "origin", "main")
         git("reset", "--hard", "origin/main")
-        (REPO / "data" / "fuel.json").write_text(json.dumps(payload) + "\n")
+        payload = json.loads(fuel_file.read_text()) if fuel_file.exists() else {}
+        if percent is not None:
+            payload.update(percent=percent, read_at=now)
+        payload["checked_in_at"] = now
+        fuel_file.write_text(json.dumps(payload) + "\n")
         git("add", "data/fuel.json")
         git("-c", "user.name=truck", "-c", "user.email=truck@users.noreply.github.com",
             "commit", "-m", "Truck fuel level")
@@ -79,6 +86,10 @@ def publish(percent):
 
 
 if __name__ == "__main__":
-    fuel = read_fuel_percent()
-    publish(fuel)
-    log(f"published fuel level {fuel:.0f}%")
+    if datetime.now().hour < 10 or "--read" in sys.argv:
+        fuel = read_fuel_percent()
+        publish(fuel)
+        log(f"published fuel level {fuel:.0f}%")
+    else:
+        publish(None)
+        log("checked in (no truck request)")

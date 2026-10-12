@@ -49,7 +49,7 @@ def read_fuel_percent(attempts=3):
             log(f"attempt {attempt} failed: {e}")
             if attempt < attempts:
                 time.sleep(90)  # GM throttles back-to-back requests
-    sys.exit("Couldn't read the fuel level")
+    return None
 
 
 def git(*args, cwd=REPO):
@@ -88,8 +88,9 @@ def publish(percent):
 if __name__ == "__main__":
     if datetime.now().hour < 10 or "--read" in sys.argv:
         fuel = read_fuel_percent()
-        publish(fuel)
-        log(f"published fuel level {fuel:.0f}%")
+        publish(fuel)  # still checks in if the truck didn't answer, so the gas call goes out
+        log(f"published fuel level {fuel:.0f}%" if fuel is not None
+            else "couldn't read the fuel level; checked in without it")
     else:
         publish(None)
         log("checked in (no truck request)")

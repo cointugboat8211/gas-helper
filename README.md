@@ -79,13 +79,16 @@ Checked in this order; the first match wins.
 | 3 | Wholesale is up 10¢+ over 3 trading days | FILL NOW |
 | 4 | Otherwise | HALF TANK |
 
-**Fair retail** = latest wholesale price + `margin`.
+**Fair retail** = latest wholesale price + margin. The margin tunes itself (see `margin_mode` below).
 
 ## Settings (`config.json`)
 
 | Setting | Default | Meaning |
 |---------|---------|---------|
-| `margin` | 0.65 | Dollars added to wholesale for taxes + distribution + station margin |
+| `margin` | 0.65 | Starting margin: dollars added to wholesale for taxes + distribution + station margin. Used until the rolling margin has enough history, or always if `margin_mode` is `fixed` |
+| `margin_mode` | rolling | `rolling` tunes the margin to the market; `fixed` always uses `margin` |
+| `margin_window_days`, `margin_percentile` | 60, 20 | Rolling margin = this percentile of the retail-minus-wholesale gap over this many days (a low percentile approximates the bottom of the price cycle) |
+| `margin_min_days` | 14 | Days of retail history needed before the rolling margin takes over |
 | `retail_jump`, `retail_jump_days` | 0.15, 3 | Rule 1 |
 | `falling_days`, `near_fair` | 7, 0.10 | Rule 2 |
 | `falling_tolerance` | 0.005 | A day-over-day rise up to this (half a cent) doesn't break a "falling" streak |

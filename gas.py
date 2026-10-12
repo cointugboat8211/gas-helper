@@ -75,6 +75,10 @@ def open_db():
             date TEXT PRIMARY KEY, call TEXT NOT NULL, reason TEXT NOT NULL,
             retail REAL, wholesale REAL, wholesale_date TEXT, fair REAL, notified_at TEXT);
     """)
+    try:
+        db.execute("ALTER TABLE calls ADD COLUMN margin REAL")
+    except sqlite3.OperationalError:
+        pass  # column already there
     return db
 
 
@@ -154,6 +158,26 @@ def fair_price(wholesale, day, margin):
     return wholesale[latest] + margin, latest
 
 
+def current_margin(retail, wholesale, cfg, today):
+    """Margin to add to wholesale. Returns (dollars, is_rolling).
+
+    In rolling mode it tunes itself: a low percentile of the retail-minus-wholesale gap
+    over the last `margin_window_days`, i.e. roughly where the gap bottoms out before
+    a spike. Until there are `margin_min_days` of history it uses the fixed `margin`.
+    """
+    if cfg.get("margin_mode") != "rolling":
+        return cfg["margin"], False
+    start = today - timedelta(days=cfg["margin_window_days"])
+    gaps = sorted(p - fair_price(wholesale, d, 0)[0] for d, p in retail.items()
+                  if start <= d <= today and fair_price(wholesale, d, 0)[0] is not None)
+    if len(gaps) < cfg["margin_min_days"]:
+        return cfg["margin"], False
+    pos = (len(gaps) - 1) * cfg["margin_percentile"] / 100
+    lo = int(pos)
+    hi = min(lo + 1, len(gaps) - 1)
+    return gaps[lo] + (gaps[hi] - gaps[lo]) * (pos - lo), True
+
+
 def decide(retail, wholesale, cfg, today):
     """Apply the rules in priority order.
 
@@ -161,7 +185,8 @@ def decide(retail, wholesale, cfg, today):
     Returns (call, one-line reason).
     """
     price = retail[today]
-    fair, _ = fair_price(wholesale, today, cfg["margin"])
+    margin, _ = current_margin(retail, wholesale, cfg, today)
+    fair, _ = fair_price(wholesale, today, margin)
     gap = price - fair
 
     # 1. Retail just spiked -> wait for the Michigan price cycle to drift back down.
@@ -228,18 +253,23 @@ def build_page(db, cfg, today, days=30):
     wholesale = load_prices(db, "wholesale")
     calls = {date.fromisoformat(r[0]): r[1:] for r in
              db.execute("SELECT date, call, reason, fair FROM calls")}
+    margin, rolling = current_margin(retail, wholesale, cfg, max(retail, default=today))
     rows = []
     for i in range(days - 1, -1, -1):
         d = today - timedelta(days=i)
         call, reason, stored_fair = calls.get(d, (None, None, None))
         # Days with a call keep the fair price that call was made with.
-        fair = stored_fair if stored_fair is not None else fair_price(wholesale, d, cfg["margin"])[0]
+        fair = stored_fair if stored_fair is not None else fair_price(wholesale, d, margin)[0]
         rows.append({"date": d.isoformat(), "retail": retail.get(d), "fair": fair,
                      "call": call, "reason": reason})
     ws_latest = max(wholesale) if wholesale else None
     data = {
         "days": rows,
-        "margin": cfg["margin"],
+        "margin": margin,
+        "margin_note": (f"auto-tuned: {cfg['margin_percentile']}th percentile of the retail-wholesale "
+                        f"gap over the last {cfg['margin_window_days']} days" if rolling
+                        else "fixed" if cfg.get("margin_mode") != "rolling"
+                        else f"fixed until there are {cfg['margin_min_days']} days of history, then auto-tuned"),
         "state": cfg["state"],
         "wholesale": wholesale.get(ws_latest),
         "wholesale_date": ws_latest.isoformat() if ws_latest else None,
@@ -283,20 +313,22 @@ def run(args):
     retail = load_prices(db, "retail")
     wholesale = load_prices(db, "wholesale")
     call, reason = decide(retail, wholesale, cfg, as_of)
-    fair, ws_date = fair_price(wholesale, as_of, cfg["margin"])
+    margin, rolling = current_margin(retail, wholesale, cfg, as_of)
+    fair, ws_date = fair_price(wholesale, as_of, margin)
     db.execute(
-        "INSERT INTO calls (date, call, reason, retail, wholesale, wholesale_date, fair) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?) "
+        "INSERT INTO calls (date, call, reason, retail, wholesale, wholesale_date, fair, margin) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(date) DO UPDATE SET call=excluded.call, reason=excluded.reason, "
         "retail=excluded.retail, wholesale=excluded.wholesale, "
-        "wholesale_date=excluded.wholesale_date, fair=excluded.fair",
-        (today.isoformat(), call, reason, price, wholesale[ws_date], ws_date.isoformat(), fair))
+        "wholesale_date=excluded.wholesale_date, fair=excluded.fair, margin=excluded.margin",
+        (today.isoformat(), call, reason, price, wholesale[ws_date], ws_date.isoformat(), fair, margin))
     db.commit()
     build_page(db, cfg, today)
 
     print(f"{call}: {reason}")
     print(f"  retail ${price:.3f} (AAA, as of {as_of})  wholesale ${wholesale[ws_date]:.3f} "
-          f"(EIA, {ws_date})  fair ${fair:.3f}")
+          f"(EIA, {ws_date})  fair ${fair:.3f}  "
+          f"margin ${margin:.3f} ({'rolling' if rolling else 'fixed'})")
 
     if not args.no_notify:
         tags, priority = NTFY_STYLE[call]

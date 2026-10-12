@@ -57,5 +57,23 @@ class Rules(unittest.TestCase):
         self.assertIn("days of retail history", reason)
 
 
+class RollingMargin(unittest.TestCase):
+    def test_uses_fixed_margin_until_enough_history(self):
+        margin, rolling = gas.current_margin(series([4.00] * 5), flat_wholesale(), CFG, TODAY)
+        self.assertEqual((margin, rolling), (CFG["margin"], False))
+
+    def test_tracks_the_low_end_of_the_recent_gap(self):
+        # Gap over wholesale cycles between $0.90 and $1.30 for 40 days.
+        retail = series([3.90 + 0.40 * (i % 5) / 4 for i in range(40)])
+        margin, rolling = gas.current_margin(retail, series([3.00] * 40), CFG, TODAY)
+        self.assertTrue(rolling)
+        self.assertAlmostEqual(margin, 0.98, places=2)
+
+    def test_fixed_mode_ignores_history(self):
+        cfg = {**CFG, "margin_mode": "fixed"}
+        margin, rolling = gas.current_margin(series([4.00] * 40), series([3.00] * 40), cfg, TODAY)
+        self.assertEqual((margin, rolling), (CFG["margin"], False))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -5,6 +5,8 @@
     python gas.py run --scheduled  for the scheduler: the 7am call, then one quiet midday re-check
     python gas.py test-notify      send a test push to your phone
     python gas.py page             rebuild docs/index.html from stored data
+    python gas.py trip-add "Houghton, MI" 2026-11-01    plan a road trip
+    python gas.py trip-remove ID   drop a trip (IDs are shown by: python gas.py trips)
 
 Standard library only. Settings live in config.json; secrets (EIA_API_KEY, NTFY_TOPIC)
 come from environment variables or a local .env file.
@@ -15,11 +17,14 @@ import os
 import re
 import sqlite3
 import sys
+import time as time_module
 import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
+
+import trips
 
 ROOT = Path(__file__).resolve().parent
 DB_PATH = ROOT / "data" / "gas.db"
@@ -81,6 +86,9 @@ def open_db(cfg):
         CREATE TABLE IF NOT EXISTS retail_prices (
             date TEXT NOT NULL, area TEXT NOT NULL, price REAL NOT NULL, source TEXT NOT NULL,
             PRIMARY KEY (date, area));
+        CREATE TABLE IF NOT EXISTS county_prices (
+            date TEXT NOT NULL, state TEXT NOT NULL, county TEXT NOT NULL, price REAL NOT NULL,
+            PRIMARY KEY (date, state, county));
         CREATE TABLE IF NOT EXISTS calls (
             date TEXT PRIMARY KEY, call TEXT NOT NULL, reason TEXT NOT NULL,
             retail REAL, wholesale REAL, wholesale_date TEXT, fair REAL, notified_at TEXT);
@@ -159,13 +167,12 @@ def fetch_rbob():
     return {day: price, previous: round(price / (1 + float(row.group(2)) / 100), 3)}
 
 
-def fetch_retail(cfg):
+def fetch_retail(cfg, html):
     """Average regular price from AAA's public state page, for the metro or the whole state.
 
     Returns (as_of_date, price, backfill) where backfill holds AAA's own
     "yesterday" and "week ago" figures, used to seed history on first runs.
     """
-    html = http_get(f"https://gasprices.aaa.com/?state={cfg['state']}")
     m = re.search(r"Price as of\s*(?:<br\s*/?>)?\s*(\d{1,2})/(\d{1,2})/(\d{2})", html)
     if not m:
         raise RuntimeError("Couldn't read the 'Price as of' date from the AAA page")
@@ -363,6 +370,49 @@ def score_calls(db, retail, cfg):
     return outcomes, summary
 
 
+# ---------- road trips ----------
+
+def store_county_prices(db, day, state_html, cfg):
+    """Save today's county averages for Michigan and any other state on an upcoming trip."""
+    states = {cfg["state"]} | {leg["state"] for t in trips.active_trips(day) for leg in t["legs"]}
+    for state in sorted(states):
+        try:
+            time_module.sleep(trips.AAA_CRAWL_DELAY)
+            prices = trips.fetch_county_prices(state, state_html if state == cfg["state"] else None)
+        except Exception as e:
+            print(f"  (skipping {state} county prices: {e})")
+            continue
+        db.executemany("INSERT OR REPLACE INTO county_prices VALUES (?, ?, ?, ?)",
+                       [(day.isoformat(), state, county, price) for county, price in prices.items()])
+    db.commit()
+
+
+def trip_summaries(db, cfg, today):
+    """Upcoming trips, each priced with the latest county averages."""
+    latest = db.execute("SELECT MAX(date) FROM county_prices").fetchone()[0]
+    if latest is None:
+        return [trips.summarize(t, {}, {}, cfg) for t in trips.active_trips(today)]
+    week_ago = (date.fromisoformat(latest) - timedelta(days=7)).isoformat()
+
+    def on(day):
+        rows = db.execute("SELECT state, county, price FROM county_prices WHERE date = ?", (day,))
+        return {(state, trips.county_key(county)): price for state, county, price in rows}
+
+    now, before = on(latest), on(week_ago)
+    changes = {key: now[key] - before[key] for key in now if key in before}
+    return [trips.summarize(t, now, changes, cfg) for t in trips.active_trips(today)]
+
+
+def add_trip(cfg, destination, when):
+    day = date.fromisoformat(when)
+    route = trips.plan_route(destination, cfg["home"])
+    slug = re.sub(r"[^a-z0-9]+", "-", route["destination"].lower()).strip("-")
+    trip = {"id": f"{slug}-{day.isoformat()}", "date": day.isoformat(), **route}
+    saved = [t for t in trips.load_trips() if t["id"] != trip["id"]] + [trip]
+    trips.save_trips(sorted(saved, key=lambda t: t["date"]))
+    return trip
+
+
 # ---------- notification ----------
 
 NTFY_STYLE = {FILL: ("fuelpump", "4"), WAIT: ("hourglass_flowing_sand", "3"), HALF: ("fuelpump", "3")}
@@ -401,6 +451,8 @@ def build_page(db, cfg, today, days=30):
     data = {
         "days": rows,
         "scorecard": scorecard,
+        "trips": trip_summaries(db, cfg, today),
+        "home": cfg["home"]["name"],
         "fuel": calls[max(calls)][3] if calls else None,
         "area": cfg.get("area_label") or retail_area(cfg),
         "margin": margin,
@@ -448,6 +500,7 @@ def run(args):
     if not api_key:
         raise RuntimeError("EIA_API_KEY is not set (see README)")
 
+    state_html = http_get(f"https://gasprices.aaa.com/?state={cfg['state']}")
     db.executemany("INSERT OR REPLACE INTO wholesale VALUES (?, ?)",
                    [(d.isoformat(), p) for d, p in fetch_wholesale(cfg, api_key).items()])
     try:
@@ -458,12 +511,13 @@ def run(args):
             db.execute(f"INSERT OR {verb} INTO rbob VALUES (?, ?)", (d.isoformat(), p))
     except Exception as e:
         print(f"  (skipping daily RBOB price: {e})")
-    as_of, price, backfill = fetch_retail(cfg)
+    as_of, price, backfill = fetch_retail(cfg, state_html)
     db.execute("INSERT OR REPLACE INTO retail_prices VALUES (?, ?, ?, 'aaa')",
                (as_of.isoformat(), area, price))
     db.executemany("INSERT OR IGNORE INTO retail_prices VALUES (?, ?, ?, 'aaa-backfill')",
                    [(d.isoformat(), area, p) for d, p in backfill.items()])
     db.commit()
+    store_county_prices(db, as_of, state_html, cfg)
 
     try:
         fuel = read_fuel_percent()
@@ -513,6 +567,13 @@ def run(args):
                    (now.isoformat(timespec="seconds"), today.isoformat()))
         db.commit()
         print("  notification sent")
+        # Heads-up the day before and the morning of a road trip.
+        for trip in trip_summaries(db, cfg, today):
+            days_out = (date.fromisoformat(trip["date"]) - today).days
+            if days_out in (0, 1):
+                notify(cfg, f"Trip to {trip['destination']} {'today' if days_out == 0 else 'tomorrow'}",
+                       trip["text"], "car", "3")
+                print(f"  trip notification sent: {trip['destination']}")
 
 
 def main():
@@ -524,6 +585,11 @@ def main():
                        help="morning call at/after 7am Eastern, then one quiet midday re-check")
     sub.add_parser("test-notify", help="send a test push notification")
     sub.add_parser("page", help="rebuild the web page from stored data")
+    p_add = sub.add_parser("trip-add", help="plan a road trip")
+    p_add.add_argument("destination", help='e.g. "Houghton, MI"')
+    p_add.add_argument("date", help="travel date, YYYY-MM-DD")
+    sub.add_parser("trip-remove", help="drop a trip").add_argument("id")
+    sub.add_parser("trips", help="list upcoming trips")
     args = parser.parse_args()
 
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows consoles choke on ¢
@@ -535,6 +601,17 @@ def main():
         cfg = load_config()
         build_page(open_db(cfg), cfg, eastern_now().date())
         print(f"Wrote {PAGE_OUT}")
+    elif args.command == "trip-add":
+        trip = add_trip(load_config(), args.destination, args.date)
+        print(f"Added {trip['id']}: {trip['miles']} miles through "
+              + ", ".join(leg["county"] for leg in trip["legs"]))
+    elif args.command == "trip-remove":
+        kept = [t for t in trips.load_trips() if t["id"] != args.id]
+        trips.save_trips(kept)
+        print(f"{len(kept)} trip(s) left")
+    elif args.command == "trips":
+        for t in trips.active_trips(eastern_now().date()):
+            print(f"{t['id']}  {t['date']}  {t['destination']}  {t['miles']} mi")
     else:
         try:
             run(args)

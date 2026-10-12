@@ -37,42 +37,33 @@ python gas.py run
 That fetches prices, stores them, prints the call, sends the push, and rebuilds
 `docs/index.html` (open it in a browser). Add `--no-notify` to skip the push.
 
-### 4. Run it every morning with GitHub Actions
+### 4. How it runs every day
 
-Runs on GitHub's servers, so your computer can be off.
+The whole daily job runs on the Mac Mini, from `mac/daily.py`, at 7:00am and noon Eastern:
 
-1. Create a new repository at <https://github.com/new> (no README or .gitignore).
-   Public is fine: your key and topic are stored as secrets, never in the code. A public repo
-   also lets you use GitHub Pages for free.
-2. Push this folder to it:
+1. pull the latest code and history from GitHub,
+2. at 7:00, read the truck's fuel level from the GM Truck Remote backend on the same machine,
+3. run `gas.py` (fetch prices, make the call, send the notification, rebuild the page),
+4. push the updated history and page back to GitHub.
 
-   ```bash
-   git add -A
-   git commit -m "Gas helper"
-   git remote add origin https://github.com/YOUR-USERNAME/YOUR-REPO.git
-   git push -u origin main
-   ```
+GitHub only hosts the page (**Settings → Pages → `main` / `/docs`**) and runs the on-demand
+job behind the app's buttons (`.github/workflows/daily.yml`). If the Mac is off at 7am there
+is no call that morning.
 
-3. In the repo: **Settings → Secrets and variables → Actions → New repository secret**.
-   Add two secrets with the same values as in `.env`: `EIA_API_KEY` and `NTFY_TOPIC`.
-4. **Actions** tab → **Daily gas call** → **Run workflow** to test it. You should get a push.
-5. For the web page: **Settings → Pages → Deploy from a branch → `main` / `/docs`**.
-   The page appears at `https://YOUR-USERNAME.github.io/YOUR-REPO/`. Put that URL in
-   `page_url` in `config.json` and tapping the notification will open it.
+On the Mac everything is in `~/SERVER FILES/gas-fuel/`: `repo/` is a clone of this repo
+(with its own `.env` holding `EIA_API_KEY` and `NTFY_TOPIC`), `deploy_key` can write to this
+repo only, and `fuel.log` is the job's log. The schedule is
+`~/Library/LaunchAgents/com.gasfuel.plist` (a copy of `mac/com.gasfuel.plist`). Because the
+job pulls before it runs, pushing a change to this repo is all it takes to update the Mac.
 
-GitHub's scheduler often starts a few minutes late, so expect the push between about 7:05
-and 7:20. Each run commits the updated database and page back to the repo; run `git pull`
-before editing settings locally.
+To run it by hand on the Mac: `python3 "$HOME/SERVER FILES/gas-fuel/repo/mac/daily.py" --no-notify`
 
-**Alternative, if this PC is on every morning:** Windows Task Scheduler → Create Basic Task →
-Daily 7:00 AM → Start a program → `python` with arguments `gas.py run` and "Start in" set to
-this folder.
+### 5. Optional: buttons in the app that do things
 
-### 5. Optional: "Get new prices" button in the app
-
-The page's **Refresh** button only reloads what's already published. **Get new prices** starts
-the GitHub job on demand (without sending a notification) and reloads when it finishes. It
-needs a GitHub token, pasted into the app once and stored only on that device:
+The page's **Refresh** button only reloads what's already published. **Get new prices**, and
+adding or removing a road trip, start the GitHub job on demand (without sending a
+notification) and reload when it finishes. They need a GitHub token, pasted into the app once
+and stored only on that device:
 
 1. Go to <https://github.com/settings/personal-access-tokens/new>.
 2. Name it (e.g. "Gas Call app") and pick an expiration.
@@ -82,6 +73,23 @@ needs a GitHub token, pasted into the app once and stored only on that device:
 
 If that token ever leaked, the most someone could do is start or cancel this repo's job.
 Delete it at <https://github.com/settings/personal-access-tokens> to revoke it.
+
+## Road trips
+
+The **Trips** tab plans gas stops for a drive. Add a trip (destination and date) from the app,
+or with `python gas.py trip-add "Houghton, MI" 2026-11-01`. The helper then:
+
+- finds the driving route from `home` and the counties it passes through, in order;
+- prices each county with AAA's daily county average, and shows the week's change;
+- marks the cheapest and priciest areas and works out where to buy gas: the cheapest plan
+  that never drops below `trip_reserve_gallons`, counting `trip_stop_cost` dollars of hassle
+  per stop so it won't add a stop to save a few cents;
+- sends a notification with the plan the morning before and the morning of the trip.
+
+County averages compare areas, not stations: the cheapest station in a pricey county can
+still beat the average of a cheap one. Routes come from OpenStreetMap services (Nominatim for
+the place, the OSRM demo server for the route) and county lookups from the FCC's Area API;
+all three are only called when a trip is added. Trips are one-way.
 
 ## The rules
 
@@ -117,6 +125,10 @@ right if the price fell 3¢ or more, FILL NOW was right if it rose 3¢ or more.
 | `wholesale_max_age_days` | 8 | Rule 3 is ignored when the newest wholesale price is older than this |
 | `tank_gallons` | 24 | Used for the "buy about N gal" hint |
 | `tank_full_percent`, `tank_low_percent` | 75, 15 | With the truck connected: above "full" the notification is silent; below "low" a WAIT says to buy just enough to get by |
+| `home` | Freeport, MI | Where road trips start (name, latitude, longitude) |
+| `trip_mpg` | 18 | Highway miles per gallon, for trip planning |
+| `trip_reserve_gallons` | 3 | Gas the trip plan always keeps in the tank |
+| `trip_stop_cost` | 2.0 | Dollars of hassle per gas stop; raise it for fewer stops |
 | `score_days`, `score_threshold` | 5, 0.03 | Scorecard: days to look ahead, and the move (dollars) that counts as right |
 | `state`, `metro` | MI, Grand Rapids-Muskegon-Holland | Retail area. `metro` must match a metro name on AAA's state page; leave it empty for the statewide average |
 | `area_label` | Grand Rapids area | Short name for the area on the page |
@@ -133,14 +145,11 @@ right if the price fell 3¢ or more, FILL NOW was right if it rose 3¢ or more.
   page (`eia.gov/todayinenergy/prices.php`), which is the previous trading day's price. It
   gives one day at a time, so the rule switches to it once a few days have been collected.
   EIA republishes these figures from Refinitiv with permission; this is for personal use.
-- **Truck fuel level, and the real schedule:** at 7:00am the Mac Mini runs `mac/push_fuel.py`,
-  which asks the GM Truck Remote backend on the same machine for the fuel level and commits
-  just that number to `data/fuel.json`. At noon it checks in again without contacting the
-  truck. Each of those pushes starts the GitHub job, which is what makes the 7am call and the
-  noon check arrive on time; GitHub's own cron schedule is kept only as a fallback. The truck backend's token never leaves the Mac. Readings older
-  than 24 hours are ignored. On the Mac it lives in `~/SERVER FILES/gas-fuel/` (log:
-  `fuel.log`) and is scheduled by `~/Library/LaunchAgents/com.gasfuel.plist`; it pushes with
-  a deploy key that can only write to this repo.
+- **Truck fuel level:** read at 7:00am from the GM Truck Remote backend on the Mac Mini and
+  saved as `data/fuel.json` (just the percentage). The truck backend's token never leaves the
+  Mac. Readings older than 24 hours are ignored.
+- **County prices:** AAA's county averages for Michigan (and any other state on an upcoming
+  trip), from the map data on the same state page.
 - **Retail:** AAA's public state page (`gasprices.aaa.com/?state=MI`), read a few times a day
   (morning call, midday check, manual refreshes). It includes the metro averages.
   The site posts no terms of use and its `robots.txt` allows crawling (with a 10-second
@@ -149,8 +158,10 @@ right if the price fell 3¢ or more, FILL NOW was right if it rose 3¢ or more.
 
 ## Files
 
-- `gas.py` — everything: fetch, store, rules, notify, page build
+- `gas.py` — fetch, store, rules, notify, page build
+- `trips.py` — road trips: route, county prices, fill-up plan
+- `mac/` — the daily job and its schedule, as installed on the Mac Mini
 - `config.json` — settings
 - `page_template.html` — web page template; output goes to `docs/index.html`
 - `test_rules.py` — rule tests (`python -m unittest`)
-- `.github/workflows/daily.yml` — the daily schedule
+- `.github/workflows/daily.yml` — the on-demand job behind the app's buttons

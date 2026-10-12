@@ -7,9 +7,9 @@
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/python3</string>
-        <string>/Users/connorvandam/SERVER FILES/gas-fuel/push_fuel.py</string>
+        <string>/Users/connorvandam/SERVER FILES/gas-fuel/repo/mac/daily.py</string>
     </array>
-    <!-- Mac local time (Eastern): 7:00am fuel reading, noon check-in -->
+    <!-- Mac local time (Eastern): 7:00am call, noon re-check -->
     <key>StartCalendarInterval</key>
     <array>
         <dict>

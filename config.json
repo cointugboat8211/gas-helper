@@ -2,9 +2,17 @@
   "state": "MI",
   "metro": "Grand Rapids-Muskegon-Holland",
   "area_label": "Grand Rapids area",
+  "home": {
+    "name": "Freeport, MI",
+    "lat": 42.765,
+    "lon": -85.3142
+  },
   "tank_gallons": 24,
   "tank_full_percent": 75,
   "tank_low_percent": 15,
+  "trip_mpg": 18,
+  "trip_reserve_gallons": 3,
+  "trip_stop_cost": 2.0,
   "margin": 1.0,
   "margin_mode": "rolling",
   "margin_window_days": 60,

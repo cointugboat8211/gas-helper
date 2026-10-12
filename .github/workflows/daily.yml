@@ -1,26 +1,23 @@
-name: Daily gas call
+name: Gas call (on demand)
 
+# The daily 7am call and the noon check run on the Mac Mini (mac/daily.py).
+# This job only runs on demand: the app's "Get new prices" and trip buttons start it.
 on:
-  schedule:
-    # GitHub cron is UTC and ignores daylight saving, so fire at both possible
-    # "7am Eastern" hours and both possible "noon Eastern" hours; gas.py --scheduled
-    # acts on the right ones and skips the others.
-    - cron: "3 11 * * *"
-    - cron: "3 12 * * *"
-    - cron: "3 16 * * *"
-    - cron: "3 17 * * *"
-  # The Mac Mini pushes the truck's fuel level at 7:00am and a check-in at noon
-  # (mac/push_fuel.py). Those pushes start this job on time; GitHub's own schedule
-  # above often runs late or not at all, so it is only the fallback.
-  push:
-    branches: [main]
-    paths: [data/fuel.json]
   workflow_dispatch:
     inputs:
       notify:
         description: Send the push notification
         type: boolean
         default: true
+      trip_destination:
+        description: Add a road trip to this place (e.g. "Houghton, MI")
+        type: string
+      trip_date:
+        description: Trip date (YYYY-MM-DD)
+        type: string
+      trip_remove:
+        description: ID of a trip to remove
+        type: string
 
 permissions:
   contents: write
@@ -35,23 +32,27 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Update trips
+        if: inputs.trip_destination != '' || inputs.trip_remove != ''
+        env:
+          TRIP_DESTINATION: ${{ inputs.trip_destination }}
+          TRIP_DATE: ${{ inputs.trip_date }}
+          TRIP_REMOVE: ${{ inputs.trip_remove }}
+        run: |
+          if [ -n "$TRIP_REMOVE" ]; then python gas.py trip-remove "$TRIP_REMOVE"; fi
+          if [ -n "$TRIP_DESTINATION" ]; then python gas.py trip-add "$TRIP_DESTINATION" "$TRIP_DATE"; fi
       - name: Make the call
         env:
           EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-        # A manual run always runs; the schedule runs once per day. The app's
-        # "Get new prices" button starts a manual run with notify off.
-        run: >-
-          python gas.py run
-          ${{ github.event_name != 'workflow_dispatch' && '--scheduled' || '' }}
-          ${{ github.event_name == 'workflow_dispatch' && !inputs.notify && '--no-notify' || '' }}
+        run: python gas.py run ${{ !inputs.notify && '--no-notify' || '' }}
       - name: Save history and page
         if: always()
         run: |
           git config user.name "gas-helper"
           git config user.email "gas-helper@users.noreply.github.com"
-          git add data/gas.db docs/index.html
+          git add -A data docs
           git diff --cached --quiet || git commit -m "Daily update"
-          # The Mac Mini may have pushed a fuel reading while this job ran.
+          # The Mac Mini may have pushed while this job ran.
           git pull --rebase -q
           git push

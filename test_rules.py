@@ -3,6 +3,7 @@ import unittest
 from datetime import date, timedelta
 
 import gas
+import trips
 
 CFG = {**gas.load_config(), "margin": 0.65, "tank_gallons": 24}
 TODAY = date(2026, 10, 9)  # a Friday
@@ -138,6 +139,44 @@ class Scorecard(unittest.TestCase):
         self.assertEqual(summary["fill"], [1, 1])
         self.assertNotIn(d(2), outcomes)
         self.assertEqual(outcomes[d(9)]["text"], "Fell 15¢ within 5 days")
+
+
+class Trips(unittest.TestCase):
+    CFG = {"trip_mpg": 20, "tank_gallons": 23, "trip_reserve_gallons": 3, "trip_stop_cost": 2.0}  # 400 mi range
+
+    def stops(self, *pairs):
+        return [{"name": "home" if mile == 0 else f"stop{mile}", "mile": mile, "price": price}
+                for mile, price in pairs]
+
+    def test_short_trip_buys_only_what_it_needs_at_home(self):
+        plan = trips.fuel_plan(self.stops((0, 4.00), (50, 4.50)), 100, self.CFG)
+        self.assertEqual([(b["name"], b["gallons"]) for b in plan], [("home", 5.0)])
+
+    def test_waits_for_much_cheaper_gas_ahead(self):
+        plan = trips.fuel_plan(self.stops((0, 4.80), (100, 4.00)), 300, self.CFG)
+        self.assertEqual([(b["name"], b["gallons"]) for b in plan], [("home", 5.0), ("stop100", 10.0)])
+
+    def test_does_not_stop_to_save_pennies(self):
+        plan = trips.fuel_plan(self.stops((0, 4.02), (100, 4.00)), 300, self.CFG)
+        self.assertEqual([b["name"] for b in plan], ["home"])
+
+    def test_long_trip_fills_then_tops_up_at_the_cheaper_stop(self):
+        plan = trips.fuel_plan(self.stops((0, 4.50), (300, 4.90), (380, 4.20)), 600, self.CFG)
+        self.assertEqual([(b["name"], b["fill"]) for b in plan], [("home", False), ("stop380", False)])
+        self.assertAlmostEqual(sum(b["gallons"] for b in plan), 30.0, places=1)
+
+    def test_gap_longer_than_the_tank_has_no_plan(self):
+        self.assertIsNone(trips.fuel_plan(self.stops((0, 4.00)), 900, self.CFG))
+
+    def test_county_names_match_across_sources(self):
+        self.assertEqual(trips.county_key("St. Clair County"), trips.county_key("Saint Clair"))
+
+    def test_route_samples_become_county_legs(self):
+        samples = [(0, ("MI", "Barry")), (8, ("MI", "Barry")), (16, ("MI", "Ionia")),
+                   (24, None), (32, ("MI", "Ionia")), (40, ("MI", "Montcalm"))]
+        legs = trips.legs_from_samples(samples, 45)
+        self.assertEqual([(l["county"], l["start"], l["end"]) for l in legs],
+                         [("Barry", 0.0, 12.0), ("Ionia", 12.0, 36.0), ("Montcalm", 36.0, 45)])
 
 
 if __name__ == "__main__":

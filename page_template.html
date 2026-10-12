@@ -87,6 +87,36 @@
           transform: translate(-50%, -40px); background: var(--surface); color: var(--ink-2);
           border: 1px solid var(--border); border-radius: 16px; padding: 6px 14px; font-size: 13px;
           box-shadow: 0 2px 10px rgba(0,0,0,0.12); }
+  main { padding-bottom: 96px; }
+  .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 3; display: flex;
+            background: var(--surface); border-top: 1px solid var(--border);
+            padding-bottom: env(safe-area-inset-bottom); }
+  .tabbar button { flex: 1; font: inherit; font-weight: 600; padding: 14px 0; border: 0;
+                   background: none; color: var(--muted); cursor: pointer;
+                   border-top: 2px solid transparent; }
+  .tabbar button[aria-selected="true"] { color: var(--ink); border-top-color: var(--retail); }
+  .trip-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .trip-head h2 { font-size: 20px; }
+  .linkish { font: inherit; font-size: 13px; color: var(--ink-2); background: none; border: 0;
+             text-decoration: underline; cursor: pointer; padding: 0; }
+  .trip .reason { margin: 8px 0 12px; }
+  td.area { min-width: 130px; }
+  td.area small { display: block; color: var(--ink-2); }
+  .bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--retail);
+         vertical-align: middle; margin-right: 8px; }
+  td.price { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  td.price small { color: var(--ink-2); }
+  .tag { white-space: nowrap; font-weight: 600; }
+  .tag .dot { margin-right: 6px; }
+  #trip-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin-top: 10px; }
+  #trip-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px;
+                     color: var(--ink-2); flex: 1; min-width: 150px; }
+  #trip-form input { font: inherit; padding: 8px 10px; border-radius: 8px;
+                     border: 1px solid var(--axis); background: var(--page); color: var(--ink); }
+  #trip-add { white-space: nowrap; font: inherit; font-weight: 600; color: var(--ink);
+              background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+              padding: 8px 14px; cursor: pointer; }
+  #trip-status { color: var(--ink-2); font-size: 13px; margin-top: 10px; }
   footer { color: var(--muted); font-size: 12px; }
 </style>
 </head>
@@ -101,6 +131,7 @@
     <input id="token" type="password" autocomplete="off" placeholder="github_pat_…" aria-label="GitHub token">
     <button id="token-save" type="button">Save</button>
   </section>
+  <div id="view-today">
   <section class="card">
     <div class="eyebrow" id="today-label"></div>
     <div class="hero" id="hero"></div>
@@ -137,7 +168,26 @@
     </div>
   </section>
   <footer id="foot"></footer>
+  </div>
+
+  <div id="view-trips" hidden>
+    <div id="trips"></div>
+    <section class="card" id="trip-planner">
+      <h2>Plan a road trip</h2>
+      <p class="reason" id="trip-note"></p>
+      <div id="trip-form">
+        <label>Where to<input id="trip-dest" type="text" placeholder="Houghton, MI" autocomplete="off"></label>
+        <label>Leaving on<input id="trip-date" type="date"></label>
+        <button id="trip-add" type="button">Add trip</button>
+      </div>
+      <div id="trip-status" role="status"></div>
+    </section>
+  </div>
 </main>
+<nav class="tabbar" role="tablist">
+  <button type="button" role="tab" data-view="today" aria-selected="true">Today</button>
+  <button type="button" role="tab" data-view="trips" aria-selected="false">Trips</button>
+</nav>
 
 <script>
 const D = /*DATA*/null;
@@ -191,9 +241,11 @@ const tokenStore = {
   get() { try { return localStorage.getItem("gh_token"); } catch { return null; } },
   set(v) { try { v ? localStorage.setItem("gh_token", v) : localStorage.removeItem("gh_token"); } catch {} },
 };
-const fetchStatus = msg => { $("fetch-status").textContent = msg; };
+const fetchStatus = msg => { $("fetch-status").textContent = msg; $("trip-status").textContent = msg; };
+let lastRequest = [];
 const askForToken = () => { $("token-panel").hidden = false; $("token").focus(); };
-async function getNewPrices() {
+async function getNewPrices(extra = {}, waiting = "Fetching new prices… this usually takes a minute or two.") {
+  lastRequest = [extra, waiting];
   const token = tokenStore.get();
   if (!token) return askForToken();
   $("fetch").disabled = true;
@@ -204,7 +256,7 @@ async function getNewPrices() {
     res = await fetch(`https://api.github.com/repos/${D.repo}/actions/workflows/daily.yml/dispatches`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
-      body: JSON.stringify({ ref: "main", inputs: { notify: "false" } }),
+      body: JSON.stringify({ ref: "main", inputs: { notify: "false", ...extra } }),
     });
   } catch { return stop("Couldn't reach GitHub. Check your connection and try again."); }
   if ([401, 403, 404].includes(res.status)) {
@@ -212,7 +264,7 @@ async function getNewPrices() {
     return stop("GitHub rejected the token (wrong, expired, or missing the Actions permission). Paste a new one.");
   }
   if (!res.ok) return stop(`GitHub returned an error (${res.status}). Try again later.`);
-  fetchStatus("Fetching new prices… this usually takes a minute or two.");
+  fetchStatus(waiting);
   for (let i = 0; i < 30; i++) {
     await new Promise(r => setTimeout(r, 10000));
     try {
@@ -225,13 +277,105 @@ async function getNewPrices() {
 }
 if (D.repo) {
   $("fetch").hidden = false;
-  $("fetch").addEventListener("click", getNewPrices);
+  $("fetch").addEventListener("click", () => getNewPrices());
   $("token-save").addEventListener("click", () => {
     const v = $("token").value.trim();
     if (!v) return;
     tokenStore.set(v); $("token").value = ""; $("token-panel").hidden = true;
-    getNewPrices();
+    getNewPrices(...lastRequest);
   });
+}
+
+// --- tabs ---
+const showView = name => {
+  $("view-today").hidden = name !== "today";
+  $("view-trips").hidden = name !== "trips";
+  for (const b of document.querySelectorAll(".tabbar button"))
+    b.setAttribute("aria-selected", b.dataset.view === name);
+  try { history.replaceState(null, "", name === "trips" ? "#trips" : location.pathname); } catch {}
+  if (name === "today") draw();
+};
+for (const b of document.querySelectorAll(".tabbar button"))
+  b.addEventListener("click", () => { showView(b.dataset.view); scrollTo(0, 0); });
+
+// --- road trips ---
+const node = (tag, cls, text) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+};
+for (const trip of D.trips) {
+  const card = node("section", "card trip");
+  const head = node("div", "trip-head");
+  head.append(node("h2", "", trip.destination));
+  if (D.repo) {
+    const remove = node("button", "linkish", "Remove");
+    remove.type = "button";
+    remove.addEventListener("click", () => {
+      if (confirm(`Remove the trip to ${trip.destination}?`))
+        getNewPrices({ trip_remove: trip.id }, "Removing the trip… this takes a minute or two.");
+    });
+    head.append(remove);
+  }
+  card.append(head);
+  card.append(node("div", "eyebrow",
+    `${fmtDate(trip.date, { weekday: "long", month: "long", day: "numeric" })} · ${trip.miles} miles from ${D.home}` +
+    (trip.hours ? ` · about ${trip.hours} hours` : "")));
+  card.append(node("p", "reason", trip.text));
+
+  const priced = trip.legs.filter(l => l.price != null).map(l => l.price);
+  const lo = Math.min(...priced), hi = Math.max(...priced);
+  const stops = new Map((trip.plan || []).map(b => [b.name, b]));
+  const table = node("table"), body = node("tbody");
+  const hr = node("tr");
+  for (const [label, cls] of [["Mile", "num"], ["Area", ""], ["Average price", ""], ["", ""]])
+    hr.append(node("th", cls, label));
+  const thead = node("thead");
+  thead.append(hr);
+  table.append(thead);
+  trip.legs.forEach((leg, i) => {
+    const tr = node("tr");
+    tr.append(node("td", "num", Math.round(leg.start)));
+    const area = node("td", "area", leg.label);
+    const buy = stops.get(i === 0 ? "home" : leg.label);
+    if (buy) area.append(node("small", "", buy.fill ? "Planned stop: fill up" : `Planned stop: about ${Math.round(buy.gallons)} gal`));
+    tr.append(area);
+    const price = node("td", "price");
+    if (leg.price != null) {
+      const bar = node("i", "bar");
+      bar.style.width = (10 + 40 * (hi > lo ? (leg.price - lo) / (hi - lo) : 0)) + "px";
+      price.append(bar, "$" + leg.price.toFixed(2));
+      if (leg.change != null && Math.abs(leg.change) >= 0.01)
+        price.append(node("small", "", ` ${leg.change > 0 ? "up" : "down"} ${Math.abs(leg.change * 100).toFixed(0)}¢ this week`));
+    } else price.textContent = "–";
+    tr.append(price);
+    const tag = node("td", "tag");
+    if (leg.tag) {
+      const d = node("i", "dot");
+      d.style.background = leg.tag === "cheapest" ? "var(--fill)" : "var(--wait)";
+      tag.append(d, leg.tag === "cheapest" ? "Cheapest" : "Priciest");
+    }
+    tr.append(tag);
+    body.append(tr);
+  });
+  table.append(body);
+  const scroll = node("div", "scroll");
+  scroll.append(table);
+  card.append(scroll);
+  $("trips").append(card);
+}
+$("trip-note").textContent = (D.trips.length ? "" : "No trips planned yet. ") +
+  `Routes start from ${D.home}. Prices are AAA county averages, so this compares areas along the way, not individual stations.`;
+if (D.repo) {
+  $("trip-add").addEventListener("click", () => {
+    const dest = $("trip-dest").value.trim(), when = $("trip-date").value;
+    if (!dest || !when) { $("trip-status").textContent = "Enter a destination and a date."; return; }
+    getNewPrices({ trip_destination: dest, trip_date: when },
+                 `Planning the route to ${dest}… this takes a minute or two. If nothing changes, check the spelling and add the state.`);
+  });
+} else {
+  $("trip-form").hidden = true;
 }
 
 // --- today's call ---
@@ -373,6 +517,7 @@ function draw() {
 }
 draw();
 addEventListener("resize", draw);
+if (location.hash === "#trips") showView("trips");
 </script>
 </body>
 </html>

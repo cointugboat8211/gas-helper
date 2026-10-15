@@ -129,7 +129,9 @@ right if the price fell 3¢ or more, FILL NOW was right if it rose 3¢ or more.
 | `margin_window_days`, `margin_percentile` | 60, 20 | Rolling margin = this percentile of the retail-minus-wholesale gap over this many days (a low percentile approximates the bottom of the price cycle) |
 | `margin_min_days` | 14 | Days of retail history needed before the rolling margin takes over |
 | `retail_jump`, `retail_jump_days` | 0.15, 3 | Rule 1 |
-| `falling_days`, `near_fair` | 7, 0.10 | Rule 2 |
+| `falling_days`, `near_fair` | 7, 0.10 | Rule 2 (and the FILL NOW band of rule 4) |
+| `gap_good`, `gap_high` | 0.20, 0.35 | Rule 4 bands: dollars above fair that count as a good price / a high price |
+| `trend_days`, `trend_flat` | 3, 0.03 | Rule 4: retail is "still dropping" if it fell at least this much over this many days |
 | `falling_tolerance` | 0.005 | A day-over-day rise up to this (half a cent) doesn't break a "falling" streak |
 | `wholesale_jump`, `wholesale_jump_days` | 0.10, 3 | Rule 3 |
 | `wholesale_max_age_days` | 8 | Rule 3 is ignored when the newest wholesale price is older than this |

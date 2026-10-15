@@ -1,4 +1,4 @@
-"""Daily gas-buying call for a Michigan driver: FILL NOW, WAIT, or HALF TANK.
+"""Daily gas-buying call for a Michigan driver: FILL NOW, 3/4 TANK, HALF TANK, 1/4 TANK, or WAIT.
 
     python gas.py run              fetch prices, store them, make the call, notify, rebuild the page
     python gas.py run --no-notify  same, but don't send the push notification
@@ -34,7 +34,8 @@ FUEL_PATH = ROOT / "data" / "fuel.json"
 FUEL_MAX_AGE_HOURS = 24
 USER_AGENT = "gas-helper/1.0 (personal use; a few requests per day)"
 
-FILL, WAIT, HALF = "FILL NOW", "WAIT", "HALF TANK"
+FILL, THREE_Q, HALF, QUARTER, WAIT = "FILL NOW", "3/4 TANK", "HALF TANK", "1/4 TANK", "WAIT"
+TANK_SHARE = {FILL: 1.0, THREE_Q: 0.75, HALF: 0.5, QUARTER: 0.25}  # how much of a tank each call buys
 NOTIFY_HOUR = 7   # Eastern
 MIDDAY_HOUR = 12  # Eastern
 
@@ -110,6 +111,14 @@ def open_db(cfg):
 
 def load_prices(db, table):
     return {date.fromisoformat(d): p for d, p in db.execute(f"SELECT date, price FROM {table}")}
+
+
+def load_wholesale(db):
+    """Wholesale prices for the fair price: the EIA API series, extended with the daily RBOB
+    closes for any days after it (the API is often a week behind)."""
+    wholesale = load_prices(db, "wholesale")
+    newest = max(wholesale, default=date.min)
+    return {**{d: p for d, p in load_prices(db, "rbob").items() if d > newest}, **wholesale}
 
 
 def load_retail(db, cfg):
@@ -298,12 +307,36 @@ def decide(retail, wholesale, cfg, today, rbob=None):
         return FILL, (f"Wholesale gas rose {cents(rising[0])} in {cfg['wholesale_jump_days']} trading days "
                       f"(through {rising[1]:%b %d}); retail will likely follow.")
 
-    # 4. Nothing decisive.
-    reason = (f"No strong signal: retail ${price:.2f} is {cents(gap)} "
-              f"{'above' if gap >= 0 else 'below'} fair (${fair:.2f}).")
+    # 4. Grade it: how close retail is to fair, and whether it's still dropping.
+    trend_days = cfg["trend_days"]
+    before = [p for d, p in retail.items() if d <= today - timedelta(days=trend_days)]
+    earlier = retail[max(d for d in retail if d <= today - timedelta(days=trend_days))] if before else None
+    change = price - earlier if earlier is not None else 0.0
+    per_day = change / trend_days
+    dropping = change <= -cfg["trend_flat"]
+    where = f"${price:.2f} is {cents(gap)} {'above' if gap >= 0 else 'below'} fair (${fair:.2f})"
+    still = f"still falling about {cents(per_day)} a day"
+    if gap <= cfg["near_fair"]:
+        call, reason = FILL, f"Good price: {where}, about as low as it usually gets."
+    elif gap <= cfg["gap_good"]:
+        if dropping:
+            call, reason = THREE_Q, (f"Good price: {where}, and {still}, so it may dip a few more cents. "
+                                     "Worth buying most of a tank.")
+        else:
+            call, reason = FILL, f"Good price: {where}, and it has stopped falling, so this is likely the low."
+    elif gap <= cfg["gap_high"]:
+        if dropping:
+            call, reason = QUARTER, (f"{where[0].upper()}{where[1:]}, {still}; it should keep coming down "
+                                     f"for a few days (fair is {cents(gap)} lower). Buy just what you need.")
+        else:
+            moving = "and rising" if change >= cfg["trend_flat"] else "not moving much"
+            call, reason = HALF, f"Middling price: {where}, {moving}."
+    else:
+        call, reason = QUARTER, (f"High price: {where}" + (f", {still}." if dropping else ".") +
+                                 " Buy just what you need.")
     if len(window) < fall_days - 1:
         reason += f" (Only {len(window)} days of retail history so far.)"
-    return HALF, reason
+    return call, reason
 
 
 def tank_advice(call, reason, fuel, cfg):
@@ -313,8 +346,9 @@ def tank_advice(call, reason, fuel, cfg):
     `quiet` means the notification isn't worth a buzz (the tank is already full).
     """
     tank = cfg["tank_gallons"]
+    share = TANK_SHARE.get(call)
     if fuel is None:
-        return (f"{reason} Buy about {tank / 2:.0f} gal." if call == HALF else reason), False
+        return (f"{reason} Buy about {tank * share:.0f} gal." if share and call != FILL else reason), False
     room = tank * (100 - fuel) / 100
     if fuel >= cfg["tank_full_percent"]:
         return f"Tank is {fuel:.0f}% full, so no need to stop. {reason}", True
@@ -322,9 +356,9 @@ def tank_advice(call, reason, fuel, cfg):
         if fuel <= cfg["tank_low_percent"]:
             return f"{reason} Tank is at {fuel:.0f}%, so buy just enough to get by.", False
         return f"{reason} Tank is at {fuel:.0f}%.", False
-    if call == FILL:
+    if call == FILL or tank * share >= room:
         return f"{reason} Tank is at {fuel:.0f}%: about {room:.0f} gal to fill.", False
-    return f"{reason} Tank is at {fuel:.0f}%: buy about {min(tank / 2, room):.0f} gal.", False
+    return f"{reason} Tank is at {fuel:.0f}%: buy about {tank * share:.0f} gal.", False
 
 
 # ---------- scorecard ----------
@@ -332,13 +366,13 @@ def tank_advice(call, reason, fuel, cfg):
 def score_calls(db, retail, cfg):
     """Judge past calls by what retail did over the following `score_days` days.
 
-    WAIT was right if the price dropped; FILL NOW was right if it rose; HALF TANK isn't
-    judged, just measured. Returns ({date: outcome}, summary).
+    WAIT and 1/4 TANK were right if the price dropped; FILL NOW and 3/4 TANK were right if it
+    rose; HALF TANK isn't judged, just measured. Returns ({date: outcome}, summary).
     """
     horizon, threshold = cfg["score_days"], cfg["score_threshold"]
     latest = max(retail, default=None)
     outcomes = {}
-    tally = {WAIT: [0, 0], FILL: [0, 0]}
+    tally = {FILL: [0, 0], THREE_Q: [0, 0], QUARTER: [0, 0], WAIT: [0, 0]}
     half_moves = []
     rows = db.execute("SELECT date, call, retail FROM calls WHERE area = ? AND retail IS NOT NULL",
                       (retail_area(cfg),))
@@ -348,10 +382,10 @@ def score_calls(db, retail, cfg):
                  if day + timedelta(days=i) in retail]
         if latest is None or day + timedelta(days=horizon) > latest or len(later) < 3:
             continue  # too soon (or too many missing days) to judge
-        if call == WAIT:
+        if call in (WAIT, QUARTER):
             move, right = min(later) - price, min(later) - price <= -threshold
             text = f"Fell {cents(move)} within {horizon} days" if right else f"Didn't fall within {horizon} days"
-        elif call == FILL:
+        elif call in (FILL, THREE_Q):
             move, right = max(later) - price, max(later) - price >= threshold
             text = f"Rose {cents(move)} within {horizon} days" if right else f"Didn't rise within {horizon} days"
         else:
@@ -364,7 +398,7 @@ def score_calls(db, retail, cfg):
         outcomes[day] = {"text": text, "right": right}
     summary = {
         "days": horizon,
-        "wait": tally[WAIT], "fill": tally[FILL],
+        "calls": [{"call": c, "right": r, "total": t} for c, (r, t) in tally.items() if t],
         "half": [len(half_moves), sum(half_moves) / len(half_moves) if half_moves else None],
     }
     return outcomes, summary
@@ -415,7 +449,8 @@ def add_trip(cfg, destination, when):
 
 # ---------- notification ----------
 
-NTFY_STYLE = {FILL: ("fuelpump", "4"), WAIT: ("hourglass_flowing_sand", "3"), HALF: ("fuelpump", "3")}
+NTFY_STYLE = {FILL: ("fuelpump", "4"), THREE_Q: ("fuelpump", "3"), HALF: ("fuelpump", "3"),
+              QUARTER: ("fuelpump", "3"), WAIT: ("hourglass_flowing_sand", "3")}
 
 
 def notify(cfg, title, message, tags="fuelpump", priority="3"):
@@ -434,7 +469,7 @@ def notify(cfg, title, message, tags="fuelpump", priority="3"):
 
 def build_page(db, cfg, today, days=30):
     retail = load_retail(db, cfg)
-    wholesale = load_prices(db, "wholesale")
+    wholesale = load_wholesale(db)
     calls = {date.fromisoformat(r[0]): r[1:] for r in
              db.execute("SELECT date, call, reason, fair, fuel_percent FROM calls")}
     margin, rolling = current_margin(retail, wholesale, cfg, max(retail, default=today))
@@ -526,7 +561,7 @@ def run(args):
         print(f"  (couldn't read the truck's fuel level: {e})")
 
     retail = load_retail(db, cfg)
-    wholesale = load_prices(db, "wholesale")
+    wholesale = load_wholesale(db)
     call, reason = decide(retail, wholesale, cfg, as_of, load_prices(db, "rbob"))
     reason, quiet = tank_advice(call, reason, fuel, cfg)
     margin, rolling = current_margin(retail, wholesale, cfg, as_of)
@@ -548,7 +583,7 @@ def run(args):
 
     print(f"{call}: {reason}")
     print(f"  retail ${price:.3f} (AAA {area}, as of {as_of})  wholesale ${wholesale[ws_date]:.3f} "
-          f"(EIA, {ws_date})  fair ${fair:.3f}  "
+          f"({ws_date})  fair ${fair:.3f}  "
           f"margin ${margin:.3f} ({'rolling' if rolling else 'fixed'})"
           + (f"  tank {fuel:.0f}%" if fuel is not None else ""))
 
@@ -556,7 +591,7 @@ def run(args):
     if quiet:
         priority = "2"
     if args.midday:
-        if call != earlier[0] and call != HALF and not quiet:
+        if call != earlier[0] and call in (FILL, WAIT) and not quiet:
             notify(cfg, f"Update: {call}", f"Changed from {earlier[0]} this morning. {reason}", tags, priority)
             print("  midday update sent")
         else:

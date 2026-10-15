@@ -22,7 +22,7 @@
     --ink: #262820; --ink-2: #5E5645; --muted: #8A8270;
     --grid: #E2D8C4; --axis: #CDBDA4; --accent: #7C8468;
     --retail: #2F3327; --fair: #7C8468;
-    --fill: #5E8C3A; --wait: #B8532F; --half: #A8987C;
+    --fill: #3F7D3A; --threeq: #8FB573; --half: #A8987C; --quarter: #D9925F; --wait: #B8532F;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -31,7 +31,7 @@
       --ink: #EFE6D5; --ink-2: #CDBDA4; --muted: #8F8A76;
       --grid: #34362B; --axis: #4B4C3D; --accent: #B5BF9C;
       --retail: #EFE6D5; --fair: #8E9878;
-      --fill: #9DBA6A; --wait: #D07A55; --half: #8F8A76;
+      --fill: #7FAF5C; --threeq: #B5BF9C; --half: #8F8A76; --quarter: #D9925F; --wait: #D0654A;
     }
   }
   * { box-sizing: border-box; }
@@ -163,8 +163,10 @@
       <span><i class="swatch" style="background:var(--retail)"></i><span id="retail-label">Retail</span></span>
       <span><i class="swatch" style="background:var(--fair)"></i>Fair (wholesale + margin)</span>
       <span><i class="dot" style="background:var(--fill)"></i>Fill now</span>
-      <span><i class="dot" style="background:var(--wait)"></i>Wait</span>
+      <span><i class="dot" style="background:var(--threeq)"></i>3/4 tank</span>
       <span><i class="dot" style="background:var(--half)"></i>Half tank</span>
+      <span><i class="dot" style="background:var(--quarter)"></i>1/4 tank</span>
+      <span><i class="dot" style="background:var(--wait)"></i>Wait</span>
     </div>
     <div id="chart"><div id="tip"></div></div>
   </section>
@@ -210,7 +212,8 @@
 <script>
 const D = /*DATA*/null;
 const days = D.days;
-const CALL_COLOR = { "FILL NOW": "var(--fill)", "WAIT": "var(--wait)", "HALF TANK": "var(--half)" };
+const CALL_COLOR = { "FILL NOW": "var(--fill)", "3/4 TANK": "var(--threeq)", "HALF TANK": "var(--half)",
+                     "1/4 TANK": "var(--quarter)", "WAIT": "var(--wait)" };
 const $ = id => document.getElementById(id);
 const usd = v => v == null ? "–" : "$" + v.toFixed(2);
 const gapText = d => d.retail == null || d.fair == null ? "–"
@@ -482,16 +485,15 @@ $("foot").textContent = `Updated ${D.generated}. Fair = NY Harbor wholesale gaso
 // --- scorecard ---
 $("retail-label").textContent = `Retail (${D.area} average, regular)`;
 {
-  const s = D.scorecard, judged = s.wait[1] + s.fill[1] + s.half[0];
+  const s = D.scorecard, judged = s.calls.reduce((n, c) => n + c.total, 0) + s.half[0];
   $("score-note").textContent = judged
-    ? `How each call looked ${s.days} days later. WAIT is right if the price then dropped; FILL NOW is right if it rose.`
+    ? `How each call looked ${s.days} days later. WAIT and 1/4 TANK are right if the price then dropped; FILL NOW and 3/4 TANK are right if it rose.`
     : `Nothing to score yet. Each call is judged by what the price does over the next ${s.days} days.`;
   const tile = (label, value) => {
     const div = document.createElement("div"), b = document.createElement("b");
     b.textContent = value; div.append(b, label); $("score").append(div);
   };
-  if (s.wait[1]) tile("WAIT calls right", `${s.wait[0]} of ${s.wait[1]}`);
-  if (s.fill[1]) tile("FILL NOW calls right", `${s.fill[0]} of ${s.fill[1]}`);
+  for (const c of s.calls) tile(`${c.call} calls right`, `${c.right} of ${c.total}`);
   if (s.half[0]) tile(`avg. change after ${s.half[0]} HALF TANK calls`,
                       (s.half[1] >= 0 ? "+" : "−") + Math.abs(s.half[1] * 100).toFixed(0) + "¢");
 }

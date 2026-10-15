@@ -31,13 +31,31 @@ class Rules(unittest.TestCase):
         retail = series([3.90, 3.86, 3.83, 3.80, 3.78, 3.75, 3.73, 3.70])  # fair = 3.65
         self.assertEqual(self.call(retail, flat_wholesale()), gas.FILL)
 
-    def test_long_slide_far_from_fair_is_half(self):
+    def test_long_slide_far_from_fair_buys_a_little(self):
         retail = series([4.40, 4.36, 4.33, 4.30, 4.28, 4.25, 4.23, 4.20])
-        self.assertEqual(self.call(retail, flat_wholesale()), gas.HALF)
+        self.assertEqual(self.call(retail, flat_wholesale()), gas.QUARTER)
 
-    def test_slide_interrupted_by_a_rise_is_half(self):
+    def test_near_fair_is_fill_even_without_a_long_slide(self):
         retail = series([3.90, 3.86, 3.83, 3.87, 3.78, 3.75, 3.73, 3.70])
-        self.assertEqual(self.call(retail, flat_wholesale()), gas.HALF)
+        self.assertEqual(self.call(retail, flat_wholesale()), gas.FILL)
+
+    def test_good_price_still_falling_is_three_quarters(self):
+        # fair = 3.65; 17c above it and down 11c in 3 days (the Oct 15 situation)
+        retail = series([4.10, 4.06, 4.00, 3.94, 3.89, 3.86, 3.82])
+        call, reason = gas.decide(retail, flat_wholesale(), CFG, TODAY)
+        self.assertEqual(call, gas.THREE_Q)
+        self.assertIn("still falling", reason)
+
+    def test_good_price_that_stopped_falling_is_fill(self):
+        retail = series([4.10, 4.00, 3.90, 3.83, 3.82, 3.82, 3.82])
+        self.assertEqual(self.call(retail, flat_wholesale()), gas.FILL)
+
+    def test_middling_flat_price_is_half(self):
+        self.assertEqual(self.call(series([3.95] * 8), flat_wholesale()), gas.HALF)
+
+    def test_middling_price_still_falling_is_quarter(self):
+        retail = series([4.20, 4.15, 4.10, 4.05, 4.00, 3.97, 3.93])
+        self.assertEqual(self.call(retail, flat_wholesale()), gas.QUARTER)
 
     def test_wholesale_rise_means_fill(self):
         wholesale = series([3.00] * 7 + [3.04, 3.08, 3.12])
@@ -45,7 +63,7 @@ class Rules(unittest.TestCase):
 
     def test_stale_wholesale_rise_is_ignored(self):
         wholesale = series([3.00] * 7 + [3.04, 3.08, 3.12], end=TODAY - timedelta(days=9))
-        self.assertEqual(self.call(series([4.00] * 5), wholesale), gas.HALF)
+        self.assertEqual(self.call(series([4.07] * 5), wholesale), gas.HALF)
 
     def test_retail_spike_outranks_wholesale_rise(self):
         wholesale = series([3.00] * 7 + [3.04, 3.08, 3.12])
@@ -54,7 +72,6 @@ class Rules(unittest.TestCase):
 
     def test_short_history_is_half(self):
         call, reason = gas.decide(series([3.80, 3.79]), flat_wholesale(), CFG, TODAY)
-        self.assertEqual(call, gas.HALF)
         self.assertIn("days of retail history", reason)
 
     def test_fresh_rbob_rise_means_fill(self):
@@ -78,7 +95,10 @@ class Tank(unittest.TestCase):
         self.assertIn("about 18 gal to fill", reason)
 
     def test_half_tank_never_overfills(self):
-        self.assertIn("buy about 7 gal", gas.tank_advice(gas.HALF, "Meh.", 70, CFG)[0])
+        self.assertIn("about 7 gal to fill", gas.tank_advice(gas.HALF, "Meh.", 70, CFG)[0])
+
+    def test_quarter_tank_buys_six_gallons(self):
+        self.assertIn("buy about 6 gal", gas.tank_advice(gas.QUARTER, "Meh.", 40, CFG)[0])
 
     def test_wait_on_empty_says_buy_a_little(self):
         self.assertIn("just enough to get by", gas.tank_advice(gas.WAIT, "Spiked.", 10, CFG)[0])
@@ -135,8 +155,8 @@ class Scorecard(unittest.TestCase):
             (d(8).isoformat(), gas.FILL, 4.45, "MI"),   # other area, ignored
         ])
         outcomes, summary = gas.score_calls(db, retail, CFG)
-        self.assertEqual(summary["wait"], [2, 2])
-        self.assertEqual(summary["fill"], [1, 1])
+        tally = {c["call"]: [c["right"], c["total"]] for c in summary["calls"]}
+        self.assertEqual(tally, {gas.WAIT: [2, 2], gas.FILL: [1, 1]})
         self.assertNotIn(d(2), outcomes)
         self.assertEqual(outcomes[d(9)]["text"], "Fell 15¢ within 5 days")
 

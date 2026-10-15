@@ -104,7 +104,13 @@ Checked in this order; the first match wins.
 | 1 | Retail is up 15¢+ versus its low of the previous 3 days | WAIT |
 | 2 | Retail has fallen for 7+ days and is within 10¢ of fair | FILL NOW |
 | 3 | Wholesale is up 10¢+ over 3 trading days | FILL NOW |
-| 4 | Otherwise | HALF TANK |
+| 4 | Otherwise, graded by how far retail is above fair and whether it is still dropping (down 3¢+ over 3 days): | |
+|   | within 10¢ of fair | FILL NOW |
+|   | 10–20¢ above, still dropping | 3/4 TANK |
+|   | 10–20¢ above, stopped dropping | FILL NOW |
+|   | 20–35¢ above, still dropping | 1/4 TANK |
+|   | 20–35¢ above, flat or rising | HALF TANK |
+|   | more than 35¢ above | 1/4 TANK |
 
 A second, quiet check runs around noon Eastern. It only notifies if the call has changed to
 WAIT or FILL NOW since the morning.

@@ -283,6 +283,51 @@ def wholesale_rise(series, cfg, today):
     return series[days[-1]] - series[days[-1 - n]], days[-1]
 
 
+def find_spikes(retail, cfg):
+    """First day of each price spike: retail up `retail_jump` or more within `retail_jump_days`."""
+    jump_days, spikes = cfg["retail_jump_days"], []
+    for day in sorted(retail):
+        recent = [p for d, p in retail.items() if day - timedelta(days=jump_days) <= d < day]
+        if recent and retail[day] - min(recent) >= cfg["retail_jump"]:
+            if not spikes or (day - spikes[-1]).days > jump_days + 1:  # not the same jump continuing
+                spikes.append(day)
+    return spikes
+
+
+def spike_outlook(retail, cfg, today):
+    """When the next spike is due, from the days between past spikes.
+
+    Uses the median gap between consecutive spikes with near-complete data in between
+    (AAA's year-ago figures add last year's cycles over time); until there are any, it
+    uses `cycle_days`. Returns None before the first spike has been seen.
+    """
+    spikes = [d for d in find_spikes(retail, cfg) if d <= today]
+    if not spikes:
+        return None
+    gaps = []
+    for a, b in zip(spikes, spikes[1:]):
+        covered = sum(1 for i in range((b - a).days) if a + timedelta(days=i) in retail)
+        if (b - a).days <= 45 and covered >= 0.8 * (b - a).days:
+            gaps.append((b - a).days)
+    typical = round(statistics.median(gaps)) if gaps else cfg["cycle_days"]
+    since = (today - spikes[-1]).days
+    due = spikes[-1] + timedelta(days=typical)
+    return {"last": spikes[-1], "since": since, "typical": typical, "due": due,
+            "cycles_seen": len(gaps), "in_window": since >= typical - cfg["spike_window"]}
+
+
+def describe_outlook(outlook, today):
+    if outlook is None:
+        return ""
+    o = outlook
+    if o["since"] >= o["typical"] + 2:
+        return f"A spike is overdue: {o['since']} days since the last one (they usually come every ~{o['typical']})."
+    if o["in_window"]:
+        return f"Next spike is due about now ({o['since']} days since the last, usually ~{o['typical']})."
+    return (f"Next spike likely around {o['due']:%b %d}, in about {(o['due'] - today).days} days "
+            f"({o['since']} days since the last, usually ~{o['typical']}).")
+
+
 def decide(retail, wholesale, cfg, today, rbob=None):
     """Apply the rules in priority order.
 
@@ -310,6 +355,9 @@ def decide(retail, wholesale, cfg, today, rbob=None):
     ws_drop = falling_wholesale(wholesale, cfg, today)
     rising = wholesale_rise(rbob or {}, cfg, today) or wholesale_rise(wholesale, cfg, today)
     where = f"${price:.2f} is {cents(gap)} {'above' if gap >= 0 else 'below'} fair (${fair:.2f})"
+    outlook = spike_outlook(retail, cfg, today)
+    spike_due = outlook is None or outlook["in_window"]  # no spike seen yet: no cycle to go by
+    spike_note = describe_outlook(outlook, today)
 
     # 2. Wholesale is sliding -> retail keeps following it down, however cheap it looks.
     #    (Oct 26-Nov 19 2026: retail fell $1.17 over 25 days this way.)
@@ -318,12 +366,17 @@ def decide(retail, wholesale, cfg, today, rbob=None):
             f"{where[0].upper()}{where[1:]}" + (f", {still}" if dropping else "") +
             f", and wholesale is down {cents(ws_drop)} in {cfg['wholesale_trend_days']} trading days, "
             "so it should keep coming down. Buy just what you need.")
+        if outlook and outlook["in_window"]:
+            spike_note += " Falling wholesale is holding it off."
 
-    # 3. Retail margin squeezed while wholesale holds steady -> the next spike is near.
-    #    (This is what preceded the Oct 22 spike.)
+    # 3. Retail margin squeezed while wholesale holds steady -> a spike is near, if the
+    #    cycle says one is due. (This is what preceded the Oct 22 spike.)
+    elif gap <= cfg["gap_good"] and spike_due:
+        call, reason = FILL, (f"Good price: {where}, with wholesale holding steady and a spike due. "
+                              "Fill up before it jumps.")
     elif gap <= cfg["gap_good"]:
-        call, reason = FILL, (f"Good price: {where}, with wholesale holding steady. "
-                              "This is where prices usually jump back up.")
+        call, reason = THREE_Q, (f"Good price: {where}, with wholesale holding steady, "
+                                 "but it's early in the price cycle, so it may slide a bit more.")
 
     # 4. Wholesale is climbing -> retail will follow.
     elif rising and rising[0] >= cfg["wholesale_jump"] and gap <= cfg["gap_high"]:
@@ -339,6 +392,8 @@ def decide(retail, wholesale, cfg, today, rbob=None):
             + ("and rising." if change >= cfg["trend_flat"] else "holding steady."))
     else:
         call, reason = QUARTER, f"High price: {where}. Buy just what you need."
+    if spike_note:
+        reason += " " + spike_note
     days_known = len([d for d in retail if today - timedelta(days=7) <= d <= today])
     if days_known < 6:
         reason += f" (Only {days_known} days of retail history so far.)"
@@ -540,6 +595,8 @@ def build_page(db, cfg, today, days=30):
         "days": rows,
         "scorecard": scorecard,
         "trips": trip_summaries(db, cfg, today),
+        "spike": describe_outlook(spike_outlook(retail, cfg, max(retail, default=today)), max(retail, default=today)),
+        "spikes": [d.isoformat() for d in find_spikes(retail, cfg) if (today - d).days < days],
         "home": cfg["home"]["name"],
         "fuel": calls[max(calls)][3] if calls else None,
         "area": cfg.get("area_label") or retail_area(cfg),

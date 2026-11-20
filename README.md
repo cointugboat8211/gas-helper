@@ -103,12 +103,19 @@ Checked in this order; the first match wins.
 |---|-----------|------|
 | 1 | Retail is up 15¢+ versus its low of the previous 3 days | WAIT |
 | 2 | Wholesale fell 10¢+ over 5 trading days (retail keeps following it down) | 1/4 TANK (HALF TANK if cheap and steady) |
-| 3 | Retail within 20¢ of fair while wholesale holds steady (the squeeze before a spike) | FILL NOW |
+| 3 | Retail within 20¢ of fair while wholesale holds steady (the squeeze before a spike), and a spike is due by the price cycle | FILL NOW |
+|   | the same, but early in the cycle | 3/4 TANK |
 | 4 | Wholesale is up 10¢+ over 3 trading days and retail isn't already high | FILL NOW |
 | 5 | Otherwise: still dropping 3¢+ over 3 days | 1/4 TANK |
 |   | 20–27¢ above fair and steady | 3/4 TANK |
 |   | 27–35¢ above fair and steady | HALF TANK |
 |   | more than 35¢ above fair | 1/4 TANK |
+
+**Spike prediction.** The helper finds past spikes (retail up 15¢+ within 3 days), takes the
+median number of days between them, and counts the days since the last one. Within
+`spike_window` days of that, a spike counts as due. Until two spikes with complete data in
+between have been seen it assumes `cycle_days` (13, the gap between the Oct 9 and Oct 22, 2026
+spikes). The prediction appears under today's call and at the end of each notification.
 
 The Scorecard also replays today's rules over every past day with enough history
 (`backtest()` in `gas.py`), so a rule change can be judged against what prices actually did.
@@ -130,6 +137,7 @@ right if the price fell 3¢ or more, FILL NOW was right if it rose 3¢ or more.
 | `margin_window_days`, `margin_percentile` | 60, 20 | Rolling margin = this percentile of the retail-minus-wholesale gap over this many days (a low percentile approximates the bottom of the price cycle) |
 | `margin_min_days` | 14 | Days of retail history needed before the rolling margin takes over |
 | `retail_jump`, `retail_jump_days` | 0.15, 3 | Rule 1 |
+| `cycle_days`, `spike_window` | 13, 3 | Days between spikes until history says otherwise; how many days early a spike counts as due |
 | `wholesale_trend_days`, `wholesale_fall` | 5, 0.10 | Rule 2: wholesale counts as sliding if it fell this much over this many trading days |
 | `gap_good`, `gap_high` | 0.20, 0.35 | Rule 4 bands: dollars above fair that count as a good price / a high price |
 | `trend_days`, `trend_flat` | 3, 0.03 | Rule 4: retail is "still dropping" if it fell at least this much over this many days |

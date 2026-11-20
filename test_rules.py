@@ -86,6 +86,32 @@ class Rules(unittest.TestCase):
         self.assertEqual(call, gas.FILL)
 
 
+class Spikes(unittest.TestCase):
+    # Two spikes 13 days apart (Oct 9 and Oct 22 2026 style), then a slide.
+    PRICES = ([3.80, 3.78, 3.76, 4.10, 4.12, 4.11] + [4.11 - 0.03 * i for i in range(1, 13)]
+              + [3.95, 4.15, 4.16] + [4.16 - 0.03 * i for i in range(1, 6)])
+
+    def test_finds_each_spike_once(self):
+        retail = series(self.PRICES)
+        self.assertEqual(gas.find_spikes(retail, CFG), [TODAY - timedelta(days=22), TODAY - timedelta(days=7)])
+
+    def test_cycle_length_comes_from_history(self):
+        o = gas.spike_outlook(series(self.PRICES), CFG, TODAY)
+        self.assertEqual((o["typical"], o["since"], o["in_window"]), (15, 7, False))
+
+    def test_cheap_early_in_the_cycle_is_three_quarters(self):
+        retail = series([4.20, 3.80, 3.79, 3.78, 4.10, 4.05, 4.00, 3.95, 3.90, 3.85, 3.80, 3.80, 3.80])
+        call, reason = gas.decide(retail, flat_wholesale(), CFG, TODAY)
+        self.assertEqual(call, gas.THREE_Q)
+        self.assertIn("Next spike likely around", reason)
+
+    def test_cheap_when_a_spike_is_due_is_fill(self):
+        retail = series([3.80, 3.79, 3.78, 4.10] + [4.00 - 0.03 * i for i in range(12)])
+        call, reason = gas.decide(retail, flat_wholesale(), CFG, TODAY)
+        self.assertEqual(call, gas.FILL)
+        self.assertIn("spike due", reason)
+
+
 class Replay(unittest.TestCase):
     def test_replay_only_scores_days_with_enough_future(self):
         retail = series([3.90, 3.85, 3.80, 3.75, 3.70, 3.66, 3.61, 3.80, 3.79, 3.78])

@@ -20,6 +20,8 @@
   "margin_min_days": 14,
   "retail_jump": 0.15,
   "retail_jump_days": 3,
+  "cycle_days": 13,
+  "spike_window": 3,
   "gap_good": 0.2,
   "gap_high": 0.35,
   "trend_days": 3,

@@ -1,28 +1,29 @@
 #!/usr/bin/env python3
-"""The daily job. Runs on the Mac Mini at 7:00am and noon (see com.gasfuel.plist).
+"""The daily job. Runs on the Mac Mini at 7:00am and noon (launchd on macOS, a systemd
+timer on Linux).
 
 It lives inside a clone of the gas-helper repo and does everything itself:
   1. pulls the latest code and history from GitHub,
-  2. at 7:00, reads the truck's fuel level from the GM Truck Remote backend on this machine,
+  2. at 7:00, reads the truck's fuel level straight from GM's OnStar API (mac/onstar.py),
   3. runs gas.py (fetch prices, make the call, send the notification, rebuild the page),
   4. pushes the updated history and page back to GitHub, which hosts the page.
 
-The truck backend's token never leaves this machine. Pass --no-notify to do a silent run,
-or --read to force a fuel reading outside the morning.
+The OnStar tokens live outside the repo (see onstar.py) and never leave this machine.
+Pass --no-notify to do a silent run, or --read to force a fuel reading outside the morning.
 """
 import json
 import os
 import subprocess
 import sys
 import time
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import onstar  # noqa: E402
+
 REPO = Path(__file__).resolve().parent.parent
 DEPLOY_KEY = REPO.parent / "deploy_key"  # write access to the gas-helper repo only
-BACKEND_ENV = Path(os.environ.get("TRUCK_BACKEND_ENV", Path.home() / "SERVER FILES/truck-backend/.env"))
-STATUS_URL = os.environ.get("TRUCK_STATUS_URL", "http://localhost:8090/api/status")
 
 
 def log(message):
@@ -43,24 +44,14 @@ def sync():
         git("reset", "--hard", "origin/main")
 
 
-def backend_token():
-    for line in BACKEND_ENV.read_text().splitlines():
-        if line.startswith("API_TOKEN="):
-            return line.split("=", 1)[1].strip().strip("\"'")
-    raise RuntimeError(f"No API_TOKEN in {BACKEND_ENV}")
-
-
 def read_fuel_percent(attempts=3):
     for attempt in range(1, attempts + 1):
         try:
-            request = urllib.request.Request(STATUS_URL, headers={"Authorization": f"Bearer {backend_token()}"})
-            with urllib.request.urlopen(request, timeout=120) as response:
-                body = json.load(response)
-            for category in body["result"]["diagnostics"]:
-                for element in category.get("diagnosticElements", []):
-                    if element.get("name") == "FUEL_LEVEL" and element.get("value") is not None:
-                        return float(element["value"])
-            raise RuntimeError("status had no fuel level in it")
+            return onstar.read_fuel_percent()
+        except onstar.ReauthNeeded as e:
+            log(f"fuel reading needs new OnStar tokens (run gm-token-tool, copy its two JSON "
+                f"files to {onstar.ONSTAR_DIR}): {e}")
+            return None  # retrying can't fix this
         except Exception as e:
             log(f"fuel reading attempt {attempt} failed: {e}")
             if attempt < attempts:

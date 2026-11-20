@@ -42,7 +42,7 @@ That fetches prices, stores them, prints the call, sends the push, and rebuilds
 The whole daily job runs on the Mac Mini, from `mac/daily.py`, at 7:00am and noon Eastern:
 
 1. pull the latest code and history from GitHub,
-2. at 7:00, read the truck's fuel level from the GM Truck Remote backend on the same machine,
+2. at 7:00, read the truck's fuel level straight from GM's OnStar API (`mac/onstar.py`),
 3. run `gas.py` (fetch prices, make the call, send the notification, rebuild the page),
 4. push the updated history and page back to GitHub.
 
@@ -157,9 +157,15 @@ right if the price fell 3¢ or more, FILL NOW was right if it rose 3¢ or more.
   page (`eia.gov/todayinenergy/prices.php`), which is the previous trading day's price. It
   gives one day at a time, so the rule switches to it once a few days have been collected.
   EIA republishes these figures from Refinitiv with permission; this is for personal use.
-- **Truck fuel level:** read at 7:00am from the GM Truck Remote backend on the Mac Mini and
-  saved as `data/fuel.json` (just the percentage). The truck backend's token never leaves the
-  Mac. Readings older than 24 hours are ignored.
+- **Truck fuel level:** read at 7:00am straight from GM's OnStar API by `mac/onstar.py` and
+  saved as `data/fuel.json` (just the percentage). Readings older than 24 hours are ignored.
+  The OnStar tokens live in `~/SERVER FILES/gas-fuel/onstar/` (outside the repo, never
+  pushed): `onstar.env` (`ONSTAR_VIN`, `ONSTAR_DEVICE_ID`), `microsoft_tokens.json` and
+  `gm_tokens.json`. There's no password login: GM blocks automated logins, so the first
+  tokens came from the gm-token-tool bootstrap (see truck-backend's README). The refresh
+  token lasts 90 days and is renewed on every morning run. If the log says "needs new OnStar
+  tokens", run gm-token-tool again and copy its two JSON files into that folder.
+  Test by hand: `python3 mac/onstar.py` (prints the level, sends nothing).
 - **County prices:** AAA's county averages for Michigan (and any other state on an upcoming
   trip), from the map data on the same state page.
 - **Retail:** AAA's public state page (`gasprices.aaa.com/?state=MI`), read a few times a day

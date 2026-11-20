@@ -39,12 +39,18 @@ class Rules(unittest.TestCase):
         retail = series([3.90, 3.86, 3.83, 3.87, 3.78, 3.75, 3.73, 3.70])
         self.assertEqual(self.call(retail, flat_wholesale()), gas.FILL)
 
-    def test_good_price_still_falling_is_three_quarters(self):
-        # fair = 3.65; 17c above it and down 11c in 3 days (the Oct 15 situation)
+    def test_cheap_with_steady_wholesale_is_fill(self):
+        # fair = 3.65; 17c above it and still sliding, wholesale flat (the Oct 21 situation)
         retail = series([4.10, 4.06, 4.00, 3.94, 3.89, 3.86, 3.82])
-        call, reason = gas.decide(retail, flat_wholesale(), CFG, TODAY)
-        self.assertEqual(call, gas.THREE_Q)
-        self.assertIn("still falling", reason)
+        self.assertEqual(self.call(retail, flat_wholesale()), gas.FILL)
+
+    def test_cheap_while_wholesale_slides_is_quarter(self):
+        # the Nov 2026 situation: retail at or below fair, but wholesale down 16c in a week
+        retail = series([3.90, 3.85, 3.80, 3.75, 3.70, 3.66, 3.61])
+        wholesale = series([3.20, 3.18, 3.14, 3.10, 3.07, 3.04, 3.02])
+        call, reason = gas.decide(retail, wholesale, CFG, TODAY)
+        self.assertEqual(call, gas.QUARTER)
+        self.assertIn("wholesale is down", reason)
 
     def test_good_price_that_stopped_falling_is_fill(self):
         retail = series([4.10, 4.00, 3.90, 3.83, 3.82, 3.82, 3.82])
@@ -59,7 +65,7 @@ class Rules(unittest.TestCase):
 
     def test_wholesale_rise_means_fill(self):
         wholesale = series([3.00] * 7 + [3.04, 3.08, 3.12])
-        self.assertEqual(self.call(series([4.00] * 5), wholesale), gas.FILL)
+        self.assertEqual(self.call(series([3.95] * 5), wholesale), gas.FILL)
 
     def test_stale_wholesale_rise_is_ignored(self):
         wholesale = series([3.00] * 7 + [3.04, 3.08, 3.12], end=TODAY - timedelta(days=9))
@@ -76,8 +82,16 @@ class Rules(unittest.TestCase):
 
     def test_fresh_rbob_rise_means_fill(self):
         rbob = series([3.00, 3.04, 3.08, 3.12], end=TODAY - timedelta(days=1))
-        call = gas.decide(series([4.00] * 5), flat_wholesale(), CFG, TODAY, rbob)[0]
+        call = gas.decide(series([3.95] * 5), flat_wholesale(), CFG, TODAY, rbob)[0]
         self.assertEqual(call, gas.FILL)
+
+
+class Replay(unittest.TestCase):
+    def test_replay_only_scores_days_with_enough_future(self):
+        retail = series([3.90, 3.85, 3.80, 3.75, 3.70, 3.66, 3.61, 3.80, 3.79, 3.78])
+        calls, summary = gas.backtest(retail, series([3.00] * 30), {}, CFG)
+        self.assertEqual(max(calls), TODAY - timedelta(days=5))
+        self.assertEqual(sum(c["total"] for c in summary["calls"]) + summary["half"][0], len(calls))
 
 
 class Tank(unittest.TestCase):

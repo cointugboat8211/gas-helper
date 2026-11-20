@@ -16,6 +16,7 @@ import json
 import os
 import re
 import sqlite3
+import statistics
 import sys
 import time as time_module
 import urllib.error
@@ -115,10 +116,19 @@ def load_prices(db, table):
 
 def load_wholesale(db):
     """Wholesale prices for the fair price: the EIA API series, extended with the daily RBOB
-    closes for any days after it (the API is often a week behind)."""
+    closes for any days after it (the API is often a week behind).
+
+    RBOB trades at a different level than the API's conventional gasoline (the gap was 25-30
+    cents this fall), so the RBOB days are shifted by the two series' recent typical spread.
+    """
     wholesale = load_prices(db, "wholesale")
-    newest = max(wholesale, default=date.min)
-    return {**{d: p for d, p in load_prices(db, "rbob").items() if d > newest}, **wholesale}
+    rbob = load_prices(db, "rbob")
+    overlap = sorted(d for d in rbob if d in wholesale)[-10:]
+    if not overlap:
+        return wholesale
+    spread = statistics.median(rbob[d] - wholesale[d] for d in overlap)
+    newest = max(wholesale)
+    return {**{d: round(p - spread, 4) for d, p in rbob.items() if d > newest}, **wholesale}
 
 
 def load_retail(db, cfg):
@@ -206,6 +216,12 @@ def fetch_retail(cfg, html):
         as_of - timedelta(days=1): regular("Yesterday Avg."),
         as_of - timedelta(days=7): regular("Week Ago Avg."),
     }
+    # AAA's "year ago" figure: one day of last year's history per run. Over time this builds
+    # a second, year-old series of price cycles for replaying the rules against.
+    try:
+        backfill[as_of.replace(year=as_of.year - 1)] = regular("Year Ago Avg.")
+    except ValueError:
+        pass  # Feb 29
     return as_of, regular("Current Avg."), backfill
 
 
@@ -285,58 +301,94 @@ def decide(retail, wholesale, cfg, today, rbob=None):
         return WAIT, (f"Retail jumped {cents(price - min(recent))} in {jump_days} days to ${price:.2f}; "
                       "prices usually drift back down after a spike.")
 
-    # 2. Long slide that has reached fair value -> a spike is likely next.
-    fall_days = cfg["falling_days"]
-    window = sorted((d, p) for d, p in retail.items() if today - timedelta(days=fall_days) <= d <= today)
-    steps = [b[1] - a[1] for a, b in zip(window, window[1:])]
-    falling = (
-        len(window) >= fall_days - 1                      # allow a couple of missed days
-        and (today - window[0][0]).days >= fall_days - 1
-        and all(s <= cfg["falling_tolerance"] for s in steps)
-        and price < window[0][1]
-    )
-    if falling and gap <= cfg["near_fair"]:
-        where = f"{cents(gap)} {'above' if gap >= 0 else 'below'} fair"
-        return FILL, (f"Retail has fallen {fall_days}+ days to ${price:.2f}, only {where} "
-                      f"(${fair:.2f}); a spike is likely soon.")
-
-    # 3. Wholesale is climbing -> retail will follow. Prefer the fresher RBOB series
-    #    once it has enough days; until then use the EIA API series.
-    rising = wholesale_rise(rbob or {}, cfg, today) or wholesale_rise(wholesale, cfg, today)
-    if rising and rising[0] >= cfg["wholesale_jump"]:
-        return FILL, (f"Wholesale gas rose {cents(rising[0])} in {cfg['wholesale_jump_days']} trading days "
-                      f"(through {rising[1]:%b %d}); retail will likely follow.")
-
-    # 4. Grade it: how close retail is to fair, and whether it's still dropping.
+    # Momentum: is retail still dropping, and which way is wholesale going?
     trend_days = cfg["trend_days"]
-    before = [p for d, p in retail.items() if d <= today - timedelta(days=trend_days)]
-    earlier = retail[max(d for d in retail if d <= today - timedelta(days=trend_days))] if before else None
-    change = price - earlier if earlier is not None else 0.0
-    per_day = change / trend_days
+    before = [d for d in retail if d <= today - timedelta(days=trend_days)]
+    change = price - retail[max(before)] if before else 0.0
     dropping = change <= -cfg["trend_flat"]
+    still = f"still falling about {cents(change / trend_days)} a day"
+    ws_drop = falling_wholesale(wholesale, cfg, today)
+    rising = wholesale_rise(rbob or {}, cfg, today) or wholesale_rise(wholesale, cfg, today)
     where = f"${price:.2f} is {cents(gap)} {'above' if gap >= 0 else 'below'} fair (${fair:.2f})"
-    still = f"still falling about {cents(per_day)} a day"
-    if gap <= cfg["near_fair"]:
-        call, reason = FILL, f"Good price: {where}, about as low as it usually gets."
+
+    # 2. Wholesale is sliding -> retail keeps following it down, however cheap it looks.
+    #    (Oct 26-Nov 19 2026: retail fell $1.17 over 25 days this way.)
+    if ws_drop:
+        call, reason = (QUARTER if dropping or gap > cfg["gap_good"] else HALF), (
+            f"{where[0].upper()}{where[1:]}" + (f", {still}" if dropping else "") +
+            f", and wholesale is down {cents(ws_drop)} in {cfg['wholesale_trend_days']} trading days, "
+            "so it should keep coming down. Buy just what you need.")
+
+    # 3. Retail margin squeezed while wholesale holds steady -> the next spike is near.
+    #    (This is what preceded the Oct 22 spike.)
     elif gap <= cfg["gap_good"]:
-        if dropping:
-            call, reason = THREE_Q, (f"Good price: {where}, and {still}, so it may dip a few more cents. "
-                                     "Worth buying most of a tank.")
-        else:
-            call, reason = FILL, f"Good price: {where}, and it has stopped falling, so this is likely the low."
+        call, reason = FILL, (f"Good price: {where}, with wholesale holding steady. "
+                              "This is where prices usually jump back up.")
+
+    # 4. Wholesale is climbing -> retail will follow.
+    elif rising and rising[0] >= cfg["wholesale_jump"] and gap <= cfg["gap_high"]:
+        call, reason = FILL, (f"Wholesale gas rose {cents(rising[0])} in {cfg['wholesale_jump_days']} "
+                              f"trading days (through {rising[1]:%b %d}); retail will likely follow.")
+
+    # 5. Otherwise grade the price.
+    elif dropping:
+        call, reason = QUARTER, f"{where[0].upper()}{where[1:]}, {still}. Buy just what you need."
     elif gap <= cfg["gap_high"]:
-        if dropping:
-            call, reason = QUARTER, (f"{where[0].upper()}{where[1:]}, {still}; it should keep coming down "
-                                     f"for a few days (fair is {cents(gap)} lower). Buy just what you need.")
-        else:
-            moving = "and rising" if change >= cfg["trend_flat"] else "not moving much"
-            call, reason = HALF, f"Middling price: {where}, {moving}."
+        call, reason = THREE_Q if gap <= (cfg["gap_good"] + cfg["gap_high"]) / 2 else HALF, (
+            f"{'Decent' if gap <= (cfg['gap_good'] + cfg['gap_high']) / 2 else 'Middling'} price: {where}, "
+            + ("and rising." if change >= cfg["trend_flat"] else "holding steady."))
     else:
-        call, reason = QUARTER, (f"High price: {where}" + (f", {still}." if dropping else ".") +
-                                 " Buy just what you need.")
-    if len(window) < fall_days - 1:
-        reason += f" (Only {len(window)} days of retail history so far.)"
+        call, reason = QUARTER, f"High price: {where}. Buy just what you need."
+    days_known = len([d for d in retail if today - timedelta(days=7) <= d <= today])
+    if days_known < 6:
+        reason += f" (Only {days_known} days of retail history so far.)"
     return call, reason
+
+
+def falling_wholesale(wholesale, cfg, today):
+    """How much wholesale fell over the last few trading days, if it fell enough to matter."""
+    days = sorted(d for d in wholesale if d <= today)[-(cfg["wholesale_trend_days"] + 1):]
+    if len(days) <= cfg["wholesale_trend_days"] or (today - days[-1]).days > cfg["wholesale_max_age_days"]:
+        return None
+    drop = wholesale[days[0]] - wholesale[days[-1]]
+    return drop if drop >= cfg["wholesale_fall"] else None
+
+
+def backtest(retail, wholesale, rbob, cfg, start=None):
+    """Replay the rules over past days as if each were today; score them like real calls.
+
+    Each day only sees prices known by then (RBOB closes up to the day before).
+    Returns (calls {date: call}, summary) in score_calls' format.
+    """
+    horizon, threshold = cfg["score_days"], cfg["score_threshold"]
+    tally = {FILL: [0, 0], THREE_Q: [0, 0], QUARTER: [0, 0], WAIT: [0, 0]}
+    calls, half_moves = {}, []
+    for day in sorted(retail):
+        if start and day < start:
+            continue
+        later = [retail[day + timedelta(days=i)] for i in range(1, horizon + 1) if day + timedelta(days=i) in retail]
+        if day + timedelta(days=horizon) > max(retail) or len(later) < 3:
+            continue
+        known = {d: p for d, p in retail.items() if d <= day}
+        if len(known) < 4 or not any(d <= day for d in wholesale):
+            continue
+        call, _ = decide(known, {d: p for d, p in wholesale.items() if d <= day}, cfg, day,
+                         {d: p for d, p in rbob.items() if d < day})
+        calls[day] = call
+        price = retail[day]
+        if call in (WAIT, QUARTER):
+            tally[call][0] += min(later) - price <= -threshold
+            tally[call][1] += 1
+        elif call in (FILL, THREE_Q):
+            tally[call][0] += max(later) - price >= threshold
+            tally[call][1] += 1
+        else:
+            half_moves.append(later[-1] - price)
+    return calls, {
+        "days": horizon,
+        "calls": [{"call": c, "right": r, "total": t} for c, (r, t) in tally.items() if t],
+        "half": [len(half_moves), sum(half_moves) / len(half_moves) if half_moves else None],
+    }
 
 
 def tank_advice(call, reason, fuel, cfg):
@@ -474,6 +526,7 @@ def build_page(db, cfg, today, days=30):
              db.execute("SELECT date, call, reason, fair, fuel_percent FROM calls")}
     margin, rolling = current_margin(retail, wholesale, cfg, max(retail, default=today))
     outcomes, scorecard = score_calls(db, retail, cfg)
+    _, scorecard["replay"] = backtest(retail, wholesale, load_prices(db, "rbob"), cfg)
     rows = []
     for i in range(days - 1, -1, -1):
         d = today - timedelta(days=i)
@@ -536,8 +589,10 @@ def run(args):
         raise RuntimeError("EIA_API_KEY is not set (see README)")
 
     state_html = http_get(f"https://gasprices.aaa.com/?state={cfg['state']}")
+    # The first run after an upgrade backfills ~4 years; later runs only need recent days.
+    have = db.execute("SELECT COUNT(*) FROM wholesale").fetchone()[0]
     db.executemany("INSERT OR REPLACE INTO wholesale VALUES (?, ?)",
-                   [(d.isoformat(), p) for d, p in fetch_wholesale(cfg, api_key).items()])
+                   [(d.isoformat(), p) for d, p in fetch_wholesale(cfg, api_key, 1000 if have < 900 else 90).items()])
     try:
         rbob = fetch_rbob()
         for d, p in rbob.items():

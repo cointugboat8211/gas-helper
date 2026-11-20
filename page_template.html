@@ -494,6 +494,11 @@ $("retail-label").textContent = `Retail (${D.area} average, regular)`;
     b.textContent = value; div.append(b, label); $("score").append(div);
   };
   for (const c of s.calls) tile(`${c.call} calls right`, `${c.right} of ${c.total}`);
+  const r = s.replay;
+  if (r && r.calls.length) {
+    const parts = r.calls.map(c => `${c.call} ${c.right} of ${c.total}`).join(", ");
+    $("score").after(node("p", "reason", `Today's rules, replayed over every past day with enough history: ${parts}.`));
+  }
   if (s.half[0]) tile(`avg. change after ${s.half[0]} HALF TANK calls`,
                       (s.half[1] >= 0 ? "+" : "−") + Math.abs(s.half[1] * 100).toFixed(0) + "¢");
 }
